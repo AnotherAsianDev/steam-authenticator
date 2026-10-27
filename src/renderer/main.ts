@@ -115,6 +115,7 @@ declare const api: {
 	allConfirmations(): P<(Status & { steamId: string; name: string; nickname: string | null })[]>;
 	enrollState(): P<EnrollState>;
 	enrollReset(): P<EnrollState>;
+	importLines(text: string, separator: string): P<{ label: string; ok: boolean; message: string }[]>;
 	enrollBegin(name: string, password: string, save: boolean): P<EnrollState>;
 	enrollLoginCode(code: string): P<EnrollState>;
 	enrollAdd(): P<EnrollState>;
@@ -1203,8 +1204,39 @@ async function addScreen(): Promise<void> {
 				if (!failed.length) goList();
 			} })
 		);
-		body.replaceChildren(form, importCard);
+		const linesCard = el(
+			'div',
+			{ class: 'card-note' },
+			el('span', { class: 'hint', textContent: 'Have username, password and both secrets?' }),
+			el('button', { class: 'small', type: 'button', textContent: 'Import from text…', onclick: drawLines })
+		);
+		body.replaceChildren(form, importCard, linesCard);
 		user.focus();
+	}
+
+	/** username:password:shared_secret:identity_secret, one account per line. */
+	function drawLines(): void {
+		const area = el('textarea', { class: 'lines', rows: 6, spellcheck: false, placeholder: 'username:password:shared_secret:identity_secret', ariaLabel: 'Accounts, one per line' });
+		const sepRow = el('div', { class: 'filters' });
+		let sep = ':';
+		const draws = (): void =>
+			sepRow.replaceChildren(...[[':', ':'], [';', ';'], [',', ','], ['|', '|'], ['Tab', '\t']].map(([t, v]) => el('button', { class: `fchip${sep === v ? ' on' : ''}`, type: 'button', textContent: t!, onclick: () => { sep = v!; draws(); } })));
+		draws();
+		const out = el('ul', { class: 'import-results' });
+		const btn = el('button', { class: 'primary', type: 'submit', textContent: 'Import' });
+		const form = el('form', { class: 'signin' }, el('h1', { textContent: 'Import from text' }),
+			el('p', { class: 'hint', textContent: 'One account per line. The app signs in once per account with the password and a code made from the shared secret, to find the SteamID64, then creates the maFile and saves the password. It needs these four values and works with any account whose Steam Guard secrets you already have.' }),
+			area, el('p', { class: 'hint', textContent: 'Separator between the values:' }), sepRow, btn, out);
+		submitting(form, async () => {
+			btn.textContent = 'Importing… (about 2 seconds per account)';
+			const r = await api.importLines(area.value, sep);
+			btn.textContent = 'Import';
+			if (!r.ok) return toast(r.error, true);
+			out.replaceChildren(...r.value.map((x) => el('li', { class: x.ok ? 'ok' : 'bad' }, el('strong', { textContent: x.label }), el('span', { class: 'hint', textContent: x.message }))));
+			if (r.value.some((x) => x.ok)) { area.value = ''; void updateTodoCount(); }
+		});
+		body.replaceChildren(form, el('button', { class: 'link', type: 'button', textContent: 'Back', onclick: drawCredentials }));
+		area.focus();
 	}
 
 	function drawLoginCode(s: EnrollState): void {

@@ -190,7 +190,7 @@ h1 { font-size: 17px; font-weight: 600; margin: 0; }
 .hint:empty { display: none; }
 .hint.error { color: var(--danger); }
 .hint.warn { color: var(--warn); }
-input[type='password'], input[type='text'] {
+input[type='password'], input[type='text'], textarea.lines {
 	font: inherit; color: inherit; background: var(--surface);
 	border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 12px;
 }
@@ -378,3 +378,9 @@ button.small { white-space: nowrap; }
 .ov-chip.warn { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); cursor: pointer; }
 .ov-chip.warn:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .ov-chip.good { color: var(--accent); }
+
+textarea.lines { width: 100%; font-family: ui-monospace, Consolas, monospace !important; font-size: 12px; resize: vertical; white-space: pre; overflow-x: auto; }
+.import-results { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.import-results li { display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
+.import-results li.ok strong { color: var(--accent); }
+.import-results li.bad strong { color: var(--danger); }
