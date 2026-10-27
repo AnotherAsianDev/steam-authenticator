@@ -1,5 +1,26 @@
 # Steam Authenticator
 
+A lean desktop Steam Guard authenticator for Windows. Plain maFiles next to the exe, confirmations, no background hammering of Steam.
+
+![Codes](docs/screenshots/codes.png)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/confirmations.png" alt="Confirmations"><br><sub>Confirmations across all accounts, grouped and filterable</sub></td>
+<td width="50%"><img src="docs/screenshots/account.png" alt="Account page"><br><sub>Account page: copy fields, open Steam signed in</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/todo.png" alt="To do"><br><sub>To do: what is missing per account</sub></td>
+<td width="50%"><img src="docs/screenshots/export.png" alt="Export"><br><sub>Export with your own fields and separator</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/add.png" alt="Add account"><br><sub>Add an authenticator to an account that has none</sub></td>
+<td></td>
+</tr>
+</table>
+
+*Screenshots use made-up accounts.*
+
 Minimal desktop Steam Guard authenticator (Electron + TypeScript, no UI framework).
 
 - **Codes** with Steam clock sync. Click the code box to copy (clipboard clears after a configurable time). Click an account name to open its Steam profile.
