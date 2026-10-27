@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.4.2
+- Several accounts: a line can end with an optional revocation code, `username:password:shared_secret:identity_secret:R12345`. Lines without it work as before.
+
 ## 0.4.1
 - Importing with secrets now has two modes: "One account" with a field for each value (username, password, shared_secret, identity_secret, and an optional revocation code that ends up in the maFile) and a message that names the field that is wrong, and "Several accounts" for pasted lines. The button on Add account is now "Import with secrets…".
 
