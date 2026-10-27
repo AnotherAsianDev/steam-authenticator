@@ -18,6 +18,10 @@ describe('export', () => {
 		expect(r.text).toBe('alice;pw:1;SS1;IS1\nbob;;SS2;IS2');
 		expect(buildExport(rows, ['sharedSecret', 'username'], '\t', false).text).toBe('SS1\talice\nSS2\tbob');
 	});
+	it('can export the Steam nickname, empty when unknown', () => {
+		const r = buildExport([{ ...rows[0]!, nickname: 'Olam | CS2' }, rows[1]!], ['username', 'nickname'], ':', false);
+		expect(r.text).toBe('alice:Olam | CS2\nbob:');
+	});
 	it('can leave out accounts with a missing value', () => {
 		const r = buildExport(rows, ['username', 'password'], ':', true);
 		expect(r).toMatchObject({ text: 'alice:pw:1', count: 1, skipped: 1 });

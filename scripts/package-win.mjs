@@ -2,6 +2,7 @@
 import { packager } from '@electron/packager';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { setExeIcon } from './set-icon.mjs';
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 execFileSync(process.execPath, ['build.mjs'], { stdio: 'inherit' });
@@ -9,7 +10,7 @@ execFileSync(process.execPath, ['build.mjs'], { stdio: 'inherit' });
 // Stage only what the app needs; everything is already bundled into these files.
 rmSync('out/app', { recursive: true, force: true });
 mkdirSync('out/app', { recursive: true });
-for (const f of ['main.js', 'preload.js', 'index.html', 'renderer.js', 'style.css']) cpSync(`dist/${f}`, `out/app/${f}`);
+for (const f of ['main.js', 'preload.js', 'index.html', 'renderer.js', 'style.css', 'icon.png']) cpSync(`dist/${f}`, `out/app/${f}`);
 writeFileSync(
 	'out/app/package.json',
 	JSON.stringify({ name: pkg.name, productName: 'Authenticator', version: pkg.version, main: 'main.js' }, null, 2)
@@ -19,6 +20,7 @@ const paths = await packager({
 	dir: 'out/app',
 	out: 'out',
 	name: 'Authenticator',
+	icon: 'build/icon.ico',
 	platform: 'win32',
 	arch: 'x64',
 	overwrite: true,
@@ -39,6 +41,7 @@ mkdirSync(portable, { recursive: true });
 cpSync(built, `${portable}/app`, { recursive: true });
 if (!existsSync('launcher/Launcher.exe')) throw new Error('launcher/Launcher.exe is missing');
 cpSync('launcher/Launcher.exe', `${portable}/Authenticator.exe`);
+await setExeIcon(`${portable}/Authenticator.exe`, 'build/icon.ico');
 
 // Only English is used, so the other language packs are just clutter.
 const locales = `${portable}/app/locales`;

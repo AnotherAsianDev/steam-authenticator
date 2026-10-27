@@ -13,3 +13,4 @@ await build({ ...common, entryPoints: ['src/renderer/main.ts'], outfile: 'dist/r
 
 cpSync('src/renderer/index.html', 'dist/index.html');
 cpSync('src/renderer/style.css', 'dist/style.css');
+cpSync('build/icon.png', 'dist/icon.png');

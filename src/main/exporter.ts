@@ -1,10 +1,12 @@
 import { UserError } from './errors';
 
-export const FIELD_KEYS = ['username', 'password', 'steamId', 'sharedSecret', 'identitySecret', 'revocationCode'] as const;
+export const FIELD_KEYS = ['username', 'nickname', 'password', 'steamId', 'sharedSecret', 'identitySecret', 'revocationCode'] as const;
 export type FieldKey = (typeof FIELD_KEYS)[number];
 
 export interface ExportRow {
 	username: string;
+	/** Steam profile name; empty until it has been fetched. */
+	nickname?: string | undefined;
 	password?: string | undefined;
 	steamId: string;
 	sharedSecret: string;

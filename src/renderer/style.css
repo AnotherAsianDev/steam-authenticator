@@ -284,8 +284,13 @@ h2 { margin: 24px 0 10px; }
 .example:empty { display: none; }
 .acc-list { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
 .acc-actions { display: flex; gap: 14px; }
-.acc { gap: 10px; }
-.acc .hint { margin: 0 0 0 6px; font-size: 12px; }
+.acc { gap: 12px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.acc-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.acc-name { color: var(--text); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acc-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.acc-chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.chip-s { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
+.chip-s.warn { color: var(--danger, #ff8a8a); border-color: currentColor; }
 
 .group .chips { margin: 8px 0 0; }
 .group .pwblock { margin-top: 4px; }

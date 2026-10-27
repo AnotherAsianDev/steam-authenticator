@@ -108,7 +108,7 @@ declare const api: {
 	todo(): P<TodoItem[]>;
 	todoIgnore(id: string, kind: string): P<Settings>;
 	setRevocation(id: string, code: string): P<void>;
-	exportInfo(): P<{ steamId: string; name: string; hasPassword: boolean; hasRevocation: boolean }[]>;
+	exportInfo(): P<{ steamId: string; name: string; nickname: string | null; hasPassword: boolean; hasRevocation: boolean }[]>;
 	exportCheck(ids: string[], fields: string[], d: string, skip: boolean): P<{ count: number; skipped: number; conflicts: number }>;
 	exportCopy(ids: string[], fields: string[], d: string, skip: boolean): P<number>;
 	exportSave(ids: string[], fields: string[], d: string, skip: boolean): P<{ count: number; path: string } | null>;
@@ -186,6 +186,13 @@ const ICONS: Record<string, string> = {
 const icon = (name: string): HTMLElement =>
 	el('span', { class: 'ico', innerHTML: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>` });
 
+/** The app logo (same drawing as build/icon.svg). Gradient ids are unique per instance. */
+let logoCount = 0;
+const logo = (size: number): HTMLElement => {
+	const g = `lg${++logoCount}`;
+	return el('span', { class: 'logo', innerHTML: `<svg viewBox="0 0 512 512" width="${size}" height="${size}" aria-hidden="true"><defs><linearGradient id="${g}b" x1=".1" y1="0" x2=".9" y2="1"><stop offset="0" stop-color="#8fa8ff"/><stop offset="1" stop-color="#4658d8"/></linearGradient><linearGradient id="${g}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><rect x="24" y="24" width="464" height="464" rx="118" fill="url(#${g}b)"/><rect x="24" y="24" width="464" height="464" rx="118" fill="url(#${g}g)"/><circle cx="256" cy="256" r="148" fill="none" stroke="#fff" stroke-width="38" stroke-linecap="round" stroke-dasharray="776 154" transform="rotate(-20 256 256)"/><circle cx="256" cy="238" r="38" fill="#fff"/><path d="M236 262h40l16 78a10 10 0 0 1-10 12h-52a10 10 0 0 1-10-12z" fill="#fff"/></svg>` });
+};
+
 const content = el('div', { class: 'content' });
 const navButtons = new Map<string, HTMLButtonElement>();
 let lockBtn: HTMLButtonElement | undefined;
@@ -223,7 +230,7 @@ function buildShell(): void {
 	const side = el(
 		'aside',
 		{ class: 'sidebar' },
-		el('div', { class: 'brand' }, icon('codes'), el('span', { class: 'label', textContent: 'Authenticator' })),
+		el('div', { class: 'brand' }, logo(30), el('span', { class: 'label', textContent: 'Authenticator' })),
 		el(
 			'nav',
 			{ class: 'navlist' },
@@ -490,7 +497,7 @@ function showLock(): void {
 			input.focus();
 		});
 		card.replaceChildren(
-			icon('lock'),
+			logo(56),
 			el('h1', { textContent: 'Authenticator is locked' }),
 			el('p', { class: 'hint', textContent: usePin ? 'Enter your PIN.' : 'Enter your master password to use saved passwords.' }),
 			form,
@@ -957,6 +964,7 @@ async function trashScreen(): Promise<void> {
 
 const FIELD_INFO: Record<string, { label: string; key: string; example: string }> = {
 	username: { label: 'Username', key: 'username', example: 'examplename' },
+	nickname: { label: 'Nickname', key: 'nickname', example: 'Olam | CS2' },
 	password: { label: 'Password', key: 'password', example: 'hunter2' },
 	steamId: { label: 'SteamID64', key: 'steamid64', example: '76561198012345678' },
 	sharedSecret: { label: 'shared_secret', key: 'shared_secret', example: 'Zm9vYmFyYmF6cXV4MTIzNDU2Nzg=' },
@@ -1034,8 +1042,14 @@ async function exportScreen(): Promise<void> {
 			el('div', { class: 'acc-actions' }, el('button', { class: 'link', type: 'button', textContent: 'All', onclick: () => { accountsList.forEach((a) => chosen.add(a.steamId)); drawAccounts(); update(); } }), el('button', { class: 'link', type: 'button', textContent: 'None', onclick: () => { chosen.clear(); drawAccounts(); update(); } })),
 			...accountsList.map((a) => {
 				const cb = el('input', { type: 'checkbox', checked: chosen.has(a.steamId), onchange: () => { if (cb.checked) chosen.add(a.steamId); else chosen.delete(a.steamId); update(); } });
-				const notes = [!a.hasPassword && on.has('password') ? 'no password' : '', !a.hasRevocation && on.has('revocationCode') ? 'no revocation code' : ''].filter(Boolean).join(', ');
-				return el('label', { class: 'check acc' }, cb, a.name, ...(notes ? [el('span', { class: 'hint', textContent: notes })] : []));
+				const chip = (cls: string, text: string, warn: boolean): HTMLElement => el('span', { class: `chip-s ${cls}${warn ? ' warn' : ''}`, textContent: text });
+				return el('label', { class: 'check acc' }, cb,
+					el('span', { class: 'acc-main' },
+						el('span', { class: 'acc-name', textContent: a.name }),
+						el('span', { class: 'acc-sub', textContent: [a.nickname, a.steamId].filter(Boolean).join(' · ') })),
+					el('span', { class: 'acc-chips' },
+						chip('pw', a.hasPassword ? 'password saved' : 'no password', false),
+						chip('rev', a.hasRevocation ? 'revocation code' : 'no revocation code', false)));
 			})
 		);
 	}
@@ -1046,7 +1060,7 @@ async function exportScreen(): Promise<void> {
 		const f = fields();
 		const names = f.map((x) => FIELD_INFO[x]!.key);
 		formatLine.textContent = f.length ? names.join(shown(delimiter)) : '(choose at least one field)';
-		const row = (n: number): string => f.map((x) => (x === 'username' ? `${FIELD_INFO[x]!.example}${n}` : x === 'steamId' ? String(BigInt(FIELD_INFO[x]!.example) + BigInt(n - 1)) : FIELD_INFO[x]!.example)).join(delimiter.replace(/\t/g, '\t'));
+		const row = (n: number): string => f.map((x) => (x === 'username' || x === 'nickname' ? `${FIELD_INFO[x]!.example}${n}` : x === 'steamId' ? String(BigInt(FIELD_INFO[x]!.example) + BigInt(n - 1)) : FIELD_INFO[x]!.example)).join(delimiter.replace(/\t/g, '\t'));
 		exampleBox.textContent = f.length ? [1, 2].map(row).join('\n') : '';
 		drawAccountsNotes();
 		window.clearTimeout(timerId);
@@ -1073,13 +1087,12 @@ async function exportScreen(): Promise<void> {
 		}, 80);
 		persist();
 	}
+	/** A missing item is highlighted only when the chosen fields would include it. */
 	function drawAccountsNotes(): void {
 		accBox.querySelectorAll<HTMLElement>('.acc').forEach((label, i) => {
 			const a = accountsList[i]!;
-			const hint = label.querySelector('.hint');
-			const notes = [!a.hasPassword && on.has('password') ? 'no password' : '', !a.hasRevocation && on.has('revocationCode') ? 'no revocation code' : ''].filter(Boolean).join(', ');
-			if (hint) hint.textContent = notes;
-			else if (notes) label.append(el('span', { class: 'hint', textContent: notes }));
+			label.querySelector('.pw')?.classList.toggle('warn', !a.hasPassword && on.has('password'));
+			label.querySelector('.rev')?.classList.toggle('warn', !a.hasRevocation && on.has('revocationCode'));
 		});
 	}
 

@@ -383,7 +383,7 @@ function registerIpc(): void {
 			.filter((id: string) => accounts.get(id))
 			.map((id: string) => {
 				const a = accounts.get(id)!;
-				return { username: a.accountName, password: credentials.get(id), steamId: a.steamId, sharedSecret: a.sharedSecret, identitySecret: a.identitySecret, revocationCode: a.revocationCode };
+				return { username: a.accountName, nickname: avatars.nickname(id), password: credentials.get(id), steamId: a.steamId, sharedSecret: a.sharedSecret, identitySecret: a.identitySecret, revocationCode: a.revocationCode };
 			});
 	};
 	const runExport = (ids: unknown, fields: unknown, delimiter: unknown, skip: unknown) => {
@@ -393,7 +393,7 @@ function registerIpc(): void {
 	handle('exportInfo', () =>
 		accounts.ids().map((steamId) => {
 			const a = accounts.get(steamId)!;
-			return { steamId, name: a.accountName, hasPassword: accounts.hasPassword(steamId), hasRevocation: !!a.revocationCode };
+			return { steamId, name: a.accountName, nickname: avatars.nickname(steamId) ?? null, hasPassword: accounts.hasPassword(steamId), hasRevocation: !!a.revocationCode };
 		})
 	);
 	handle('exportCheck', (ids: unknown, fields: unknown, delimiter: unknown, skip: unknown) => {
@@ -579,6 +579,7 @@ function createWindow(): void {
 		width: state.width,
 		height: state.height,
 		...(state.x !== undefined && state.y !== undefined ? { x: state.x, y: state.y } : {}),
+		...(existsSync(join(__dirname, 'icon.png')) ? { icon: join(__dirname, 'icon.png') } : {}),
 		minWidth: WINDOW_MIN.width,
 		minHeight: WINDOW_MIN.height,
 		title: 'Authenticator',
