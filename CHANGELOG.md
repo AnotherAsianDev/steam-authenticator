@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+- Cleaner layout: title, filters and cards share one left edge; the account page is grouped into cards (Copy, Open on Steam, Confirmations).
+- Code boxes line up across rows whether or not a badge is shown.
+
 ## 0.1.1
 - Releases no longer contain `maFiles` or `data` folders. Update by dragging the new folder over the old one and choosing Replace; your accounts and settings are never touched, and anything missing is recreated on start.
 - Settings shows the installed version.

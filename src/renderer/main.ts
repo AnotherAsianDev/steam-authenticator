@@ -1018,7 +1018,19 @@ async function detailScreen(id: string): Promise<void> {
 
 	show(
 		backHeader('Account'),
-		el('main', {}, profile, chips, pwBlock, el('h2', { textContent: 'Open on Steam, signed in' }), webBar, el('p', { class: 'hint', textContent: 'Opens a separate window that is already logged in as this account. Nothing is kept when you close it.' }), el('div', { class: 'section-head' }, el('h2', { textContent: 'Confirmations' }), refreshBtn), body, el('div', { class: 'danger-zone' }, removeBtn))
+		el(
+			'main',
+			{},
+			el(
+				'div',
+				{ class: 'groups' },
+				el('section', { class: 'group profile-card' }, profile),
+				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Copy' }), chips, pwBlock),
+				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Open on Steam, signed in' }), webBar, el('p', { class: 'hint', textContent: 'Opens a separate window that is already logged in as this account. Nothing is kept when you close it.' })),
+				el('section', { class: 'group' }, el('div', { class: 'section-head' }, el('h2', { class: 'todo-title', textContent: 'Confirmations' }), refreshBtn), body),
+				el('div', { class: 'danger-zone' }, removeBtn)
+			)
+		)
 	);
 
 	async function act(action: 'accept' | 'deny', ids: string[]): Promise<void> {
