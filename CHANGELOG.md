@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+- New logo: a shield with a Steam Guard style code. It is the app icon (window, taskbar, Authenticator.exe) and shows in the sidebar and on the lock screen.
+- The Export page now shows each account as a card: login name, Steam nickname, SteamID64, and whether a password and a revocation code are saved (a missing one is highlighted when you export that field). New export field "Nickname".
+- Settings ends with an About block: copyright (github.com/AnotherAsianDev), MIT License, and a note that the app is not affiliated with Valve. Added a LICENSE file.
+
 ## 0.2.2
 - The title bar buttons (lock, minimize, maximize, close) work while the app is locked and while a dialog is open. The lock and dialog layers no longer count as part of the window's drag area, which was swallowing the clicks.
 - New setting "Show Steam nickname": shows the profile name instead of the login name on the list, the account page and in confirmations. The login name moves to the second line, next to the SteamID64 if that is on. Search finds both. The name comes from the same public profile lookup as the pictures, so it costs no extra requests, and it is kept in `data/avatars/names.json`.
