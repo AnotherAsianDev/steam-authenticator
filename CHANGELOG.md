@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+- New overview at the top of the Codes page: how many accounts you have, and how many still need a sign-in, have no saved password, no revocation code, or were never activated. Click a chip to open the To do list. When nothing is missing it says so.
+- The logo in the sidebar is bigger and no longer sits on a dark tile that vanished into the sidebar; it is aligned with the menu icons.
+
 ## 0.3.0
 - New logo: a shield with a Steam Guard style code. It is the app icon (window, taskbar, Authenticator.exe) and shows in the sidebar and on the lock screen.
 - The Export page now shows each account as a card: login name, Steam nickname, SteamID64, and whether a password and a revocation code are saved (a missing one is highlighted when you export that field). New export field "Nickname".
