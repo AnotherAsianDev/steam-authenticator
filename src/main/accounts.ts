@@ -118,7 +118,8 @@ export class Accounts {
 		try {
 			entry = trash.read(entryId);
 			parseMaFile(entry.maFile);
-		} catch {
+		} catch (err) {
+			if (err instanceof UserError) throw err;
 			throw new UserError('That entry cannot be read any more');
 		}
 		if (this.d.store.has(entry.steamId)) throw new UserError('This account is already in the app. Remove it first or delete this entry');

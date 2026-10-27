@@ -53,6 +53,12 @@ interface TodoItem {
 	name: string;
 	detail: string;
 }
+interface VaultInfo {
+	enabled: boolean;
+	locked: boolean;
+	pin: boolean;
+	pinTries: number;
+}
 interface TrashEntry {
 	id: string;
 	steamId: string;
@@ -119,6 +125,15 @@ declare const api: {
 	trashDelete(id: string): P<void>;
 	trashEmpty(): P<number>;
 	trashOpen(): P<string>;
+	vaultInfo(): P<VaultInfo>;
+	vaultSetUp(password: string): P<VaultInfo>;
+	vaultUnlock(password: string): P<VaultInfo>;
+	vaultUnlockPin(pin: string): P<VaultInfo>;
+	vaultLock(): P<VaultInfo>;
+	vaultChange(oldPassword: string, next: string): P<VaultInfo>;
+	vaultRemove(password: string): P<VaultInfo>;
+	pinSet(pin: string): P<VaultInfo>;
+	pinRemove(): P<VaultInfo>;
 	winMinimize(): P<void>;
 	winMaximize(): P<void>;
 	winClose(): P<void>;
@@ -133,6 +148,7 @@ declare const api: {
 
 const root = document.getElementById('app')!;
 let settings: Settings;
+let vaultState: VaultInfo = { enabled: false, locked: false, pin: false, pinTries: 0 };
 let timer: number | undefined;
 let view: { name: 'list' } | { name: 'trash' } | { name: 'log' } | { name: 'todo' } | { name: 'export' } | { name: 'confirms' } | { name: 'add' } | { name: 'settings' } | { name: 'detail'; id: string } = { name: 'list' };
 let refreshView: () => void = () => undefined;
@@ -161,6 +177,7 @@ const ICONS: Record<string, string> = {
 	add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
 	settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>',
 	log: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+	lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 	trash: '<path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3"/>',
 	folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
 };
@@ -214,6 +231,7 @@ function buildShell(): void {
 		el(
 			'nav',
 			{ class: 'navlist bottom' },
+			item('lock', 'Lock', () => void toggleLock()),
 			item('folder', 'Storage folder', () => void api.reveal()),
 			item('trash', 'Trash', () => void navigate({ name: 'trash' })),
 			item('log', 'Log', () => void navigate({ name: 'log' }), true),
@@ -226,6 +244,7 @@ function setNav(): void {
 	const active = view.name === 'list' || view.name === 'detail' ? 'codes' : view.name;
 	navButtons.forEach((b, id) => b.classList.toggle('active', id === active));
 	navButtons.get('folder')?.classList.remove('active');
+	navButtons.get('lock')?.classList.remove('active');
 }
 
 /** Runs a screen's refresh on a timer, but not while the window is hidden or minimized. */
@@ -389,6 +408,121 @@ const backHeader = (title: string): HTMLElement =>
 		{},
 		el('div', { class: 'left' }, el('button', { class: 'icon', title: 'Back', ariaLabel: 'Back', textContent: '‹', onclick: goList }), el('span', { class: 'title', textContent: title }))
 	);
+
+// --------------------------------------------------------------- lock + PIN --
+
+function updateLockNav(): void {
+	const b = navButtons.get('lock');
+	if (!b) return;
+	b.hidden = !vaultState.enabled;
+	const text = vaultState.locked ? 'Unlock' : 'Lock';
+	b.title = text;
+	const label = b.querySelector('.label');
+	if (label) label.textContent = text;
+}
+
+async function toggleLock(): Promise<void> {
+	if (vaultState.locked) return showLock();
+	const r = await api.vaultLock();
+	if (!r.ok) return toast(r.error, true);
+	vaultState = r.value;
+	updateLockNav();
+	showLock();
+}
+
+/** The unlock screen. It covers the window below the title bar; "Open codes only" dismisses it without unlocking. */
+function showLock(): void {
+	document.querySelector('.lock')?.remove();
+	let usePin = vaultState.pin;
+	const card = el('div', { class: 'lock-card' });
+	const overlay = el('div', { class: 'lock' }, card);
+	document.body.append(overlay);
+
+	function draw(): void {
+		const input = el('input', { type: 'password', autocomplete: 'off', spellcheck: false, placeholder: usePin ? 'PIN' : 'Master password', ariaLabel: usePin ? 'PIN' : 'Master password', ...(usePin ? { inputMode: 'numeric' as const } : {}) });
+		const err = el('p', { class: 'hint error', textContent: '' });
+		const btn = el('button', { class: 'primary', type: 'submit', textContent: 'Unlock' });
+		const form = el('form', { class: 'signin' }, input, err, btn);
+		form.addEventListener('submit', async (e) => {
+			e.preventDefault();
+			if (!input.value) return;
+			btn.disabled = true;
+			btn.textContent = 'Unlocking…';
+			const r = await (usePin ? api.vaultUnlockPin(input.value) : api.vaultUnlock(input.value));
+			if (r.ok) {
+				vaultState = r.value;
+				updateLockNav();
+				overlay.remove();
+				refreshView();
+				void updateTodoCount();
+				toast('Unlocked');
+				return;
+			}
+			input.value = '';
+			err.textContent = r.error;
+			btn.disabled = false;
+			btn.textContent = 'Unlock';
+			// Too many wrong PINs removes it: carry on with the password.
+			const info = await api.vaultInfo();
+			if (info.ok) {
+				vaultState = info.value;
+				if (usePin && !info.value.pin) {
+					usePin = false;
+					draw();
+					const e2 = card.querySelector<HTMLElement>('.hint.error');
+					if (e2) e2.textContent = r.error;
+				}
+			}
+			input.focus();
+		});
+		card.replaceChildren(
+			icon('lock'),
+			el('h1', { textContent: 'Authenticator is locked' }),
+			el('p', { class: 'hint', textContent: usePin ? 'Enter your PIN.' : 'Enter your master password to use saved passwords.' }),
+			form,
+			...(vaultState.pin ? [el('button', { class: 'link', type: 'button', textContent: usePin ? 'Use master password instead' : 'Use PIN instead', onclick: () => { usePin = !usePin; draw(); } })] : []),
+			el('button', { class: 'link', type: 'button', textContent: 'Open codes only', onclick: () => overlay.remove() }),
+			el('p', { class: 'hint fine', textContent: 'Codes work without unlocking. Saved passwords and automatic sign-in need it.' })
+		);
+		input.focus();
+	}
+	draw();
+}
+
+interface DialogField {
+	name: string;
+	label: string;
+	numeric?: boolean;
+}
+/** A small form in a window of its own. `run` returns an error to show, or nothing to close. */
+function dialog(title: string, text: string, fields: DialogField[], submit: string, run: (v: Record<string, string>) => Promise<string | undefined>): void {
+	document.querySelector('.modal')?.remove();
+	const inputs = fields.map((f) => el('input', { type: 'password', autocomplete: 'off', spellcheck: false, placeholder: f.label, ariaLabel: f.label, ...(f.numeric ? { inputMode: 'numeric' as const } : {}) }));
+	const err = el('p', { class: 'hint error', textContent: '' });
+	const btn = el('button', { class: 'primary', type: 'submit', textContent: submit });
+	const close = (): void => {
+		overlay.remove();
+		document.removeEventListener('keydown', onKey);
+	};
+	const form = el('form', { class: 'signin' }, el('h1', { textContent: title }), el('p', { class: 'hint', textContent: text }), ...inputs, err, el('div', { class: 'row-actions' }, el('button', { class: 'small', type: 'button', textContent: 'Cancel', onclick: close }), btn));
+	const overlay = el('div', { class: 'modal' }, el('div', { class: 'lock-card left' }, form));
+	const onKey = (e: KeyboardEvent): void => {
+		if (e.key === 'Escape') close();
+	};
+	document.addEventListener('keydown', onKey);
+	form.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		btn.disabled = true;
+		const values: Record<string, string> = {};
+		fields.forEach((f, i) => (values[f.name] = inputs[i]!.value));
+		const problem = await run(values);
+		btn.disabled = false;
+		if (problem) err.textContent = problem;
+		else close();
+	});
+	document.body.append(overlay);
+	inputs[0]?.focus();
+}
 
 // ------------------------------------------------------------------- list --
 
@@ -1427,6 +1561,38 @@ async function settingsScreen(): Promise<void> {
 		return sel;
 	};
 
+	const btn = (text: string, run: () => void): HTMLButtonElement => el('button', { class: 'small', type: 'button', textContent: text, onclick: run });
+	const apply = (r: Result<VaultInfo>): string | undefined => {
+		if (!r.ok) return r.error;
+		vaultState = r.value;
+		updateLockNav();
+		void settingsScreen();
+		return undefined;
+	};
+	const matching = (a: string, b: string): string | undefined => (a === b ? undefined : 'The two entries are different');
+	const securityRows = (): HTMLElement[] => {
+		if (!vaultState.enabled) {
+			return [
+				row('Master password', 'Encrypts saved passwords and sign-in tokens (credentials.json, sessions.json). The maFiles stay as they are', btn('Set up…', () =>
+					dialog('Set a master password', 'Saved passwords and sign-in tokens are encrypted with it. If you forget it they cannot be recovered and you enter them again; your maFiles are not affected.', [{ name: 'a', label: 'New master password' }, { name: 'b', label: 'Repeat it' }], 'Turn on', async (v) => matching(v['a']!, v['b']!) ?? apply(await api.vaultSetUp(v['a']!)))
+				))
+			];
+		}
+		const rows = [
+			row('Master password', 'Saved passwords and sign-in tokens are encrypted', el('div', { class: 'row-actions left' },
+				btn('Lock now', () => void toggleLock()),
+				btn('Change…', () => dialog('Change master password', 'Your saved passwords stay as they are.', [{ name: 'old', label: 'Current master password' }, { name: 'a', label: 'New master password' }, { name: 'b', label: 'Repeat it' }], 'Change', async (v) => matching(v['a']!, v['b']!) ?? apply(await api.vaultChange(v['old']!, v['a']!)))),
+				btn('Turn off…', () => dialog('Turn off the master password', 'Saved passwords and sign-in tokens go back to plain text files.', [{ name: 'pw', label: 'Master password' }], 'Turn off', async (v) => apply(await api.vaultRemove(v['pw']!)))))),
+			vaultState.pin
+				? row('PIN on this PC', 'Unlocks without the master password. Kept on this PC only, not in this folder. 5 wrong tries remove it', el('div', { class: 'row-actions left' },
+					btn('Change…', () => dialog('Change PIN', 'Use 6 or more digits.', [{ name: 'a', label: 'New PIN', numeric: true }, { name: 'b', label: 'Repeat it', numeric: true }], 'Save', async (v) => matching(v['a']!, v['b']!) ?? apply(await api.pinSet(v['a']!)))),
+					btn('Remove', async () => { const r = apply(await api.pinRemove()); if (r) toast(r, true); })))
+				: row('PIN on this PC', 'Unlock with a short PIN instead of the master password. Kept on this PC only, not in this folder', btn('Set PIN…', () =>
+					dialog('Set a PIN for this PC', 'Use 6 or more digits. After 5 wrong tries it is removed and the master password is needed again. Any other PC still asks for the master password.', [{ name: 'a', label: 'PIN', numeric: true }, { name: 'b', label: 'Repeat it', numeric: true }], 'Save', async (v) => matching(v['a']!, v['b']!) ?? apply(await api.pinSet(v['a']!)))))
+		];
+		return rows;
+	};
+
 	const folders = el(
 		'ul',
 		{ class: 'folders' },
@@ -1448,11 +1614,13 @@ async function settingsScreen(): Promise<void> {
 			row('Check repeatedly', 'Off is safest. Steam rate-limits frequent checks', select(s.autoCheckSeconds, [[0, 'Never, only with the button'], [300, 'Every 5 minutes'], [900, 'Every 15 minutes'], [1800, 'Every 30 minutes']], (v) => void set({ autoCheckSeconds: v }), 'Check interval')),
 			el('h2', { textContent: 'Clipboard' }),
 			row('Clear after copying', 'Codes and secrets', select(s.clipboardClearSeconds, [[0, 'Never'], [15, '15 seconds'], [30, '30 seconds'], [60, '1 minute']], (v) => void set({ clipboardClearSeconds: v }), 'Clear clipboard')),
+			el('h2', { textContent: 'Security' }),
+			...securityRows(),
 			el('h2', { textContent: 'Importing' }),
 			row('Find SDA folders automatically', 'Looks for folders named maFiles in Downloads, Desktop and Documents when the app starts', toggle(s.autoDetect, (v) => void set({ autoDetect: v }), 'Find SDA folders automatically')),
 			el('div', { class: 'setting stack' }, el('span', { class: 'setting-label', textContent: 'Watched folders' }), s.importFolders.length ? folders : el('span', { class: 'hint', textContent: 'None added.' }), el('div', { class: 'row-actions left' }, el('button', { class: 'small', textContent: 'Add folder…', onclick: async () => { const r = await api.addFolder(); if (r.ok) { applySettings(r.value); void settingsScreen(); } else toast(r.error, true); } }), el('button', { class: 'small', textContent: 'Scan now', onclick: async () => { const r = await api.rescan(); if (!r.ok) return toast(r.error, true); toast(r.value.added.length ? `Imported ${r.value.added.join(', ')}` : 'Nothing new found'); } }))),
 			el('p', { class: 'hint fine', id: 'ver' }),
-			el('p', { class: 'hint fine', textContent: 'New accounts are copied; existing ones are never overwritten and your originals are never changed. Passwords you choose to save, and the sign-in token, are kept in plain text (credentials.json and sessions.json) next to your maFiles.' })
+			el('p', { class: 'hint fine', textContent: 'New accounts are copied; existing ones are never overwritten and your originals are never changed. Passwords you choose to save, and the sign-in token, are kept next to your maFiles (credentials.json and sessions.json), in plain text unless you set a master password under Security.' })
 		)
 	);
 	void api.version().then((v) => { const n = document.getElementById('ver'); if (n && v.ok) n.textContent = `Version ${v.value}. To update, drop the new folder over this one and choose Replace. Your maFiles and data stay.`; });
@@ -1489,7 +1657,11 @@ async function boot(): Promise<void> {
 		toast(n.message, n.error);
 		refreshView();
 	});
+	const v = await api.vaultInfo();
+	if (v.ok) vaultState = v.value;
 	buildShell();
+	updateLockNav();
+	if (vaultState.locked) showLock();
 	void updateLogCount();
 	await listScreen();
 }

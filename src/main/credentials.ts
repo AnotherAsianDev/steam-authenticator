@@ -1,41 +1,59 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { SecretFile, type Vault } from './vault';
 
 /**
- * Saved passwords, one per account, in plain text.
+ * Saved passwords, one per account.
  *
- * Kept in their own file (not inside the maFiles) so the maFiles stay in the
- * standard format. Readable by the current user only.
+ * Plain text in `credentials.json` by default (kept apart from the maFiles so
+ * those stay in the standard format). With a master password the file is
+ * encrypted. While it is locked nothing is known about it: `has` says yes, so
+ * the app does not nag about "missing" passwords, `get` says nothing, and any
+ * change is refused.
  */
 export class CredentialStore {
 	private data: Record<string, string> = {};
-	constructor(private readonly file: string) {
+	private readonly f: SecretFile;
+	constructor(file: string, vault?: Vault) {
+		this.f = new SecretFile(file, 'credentials', vault);
+		this.reload();
+	}
+
+	/** Read the file again, for example after unlocking. */
+	reload(): void {
+		this.data = {};
 		try {
-			if (existsSync(file)) {
-				const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+			const text = this.f.read();
+			if (text) {
+				const raw = JSON.parse(text) as Record<string, unknown>;
 				for (const [id, pw] of Object.entries(raw)) if (typeof pw === 'string') this.data[id] = pw;
 			}
 		} catch {
 			this.data = {};
 		}
 	}
+	get locked(): boolean {
+		return this.f.locked;
+	}
 	get(steamId: string): string | undefined {
 		return this.data[steamId];
 	}
 	has(steamId: string): boolean {
-		return this.data[steamId] !== undefined;
+		return this.f.locked || this.data[steamId] !== undefined;
 	}
 	set(steamId: string, password: string): void {
-		this.data[steamId] = password;
-		this.save();
+		this.save({ ...this.data, [steamId]: password });
 	}
 	delete(steamId: string): void {
 		if (this.data[steamId] === undefined) return;
-		delete this.data[steamId];
-		this.save();
+		const next = { ...this.data };
+		delete next[steamId];
+		this.save(next);
 	}
-	private save(): void {
-		const tmp = `${this.file}.tmp`;
-		writeFileSync(tmp, JSON.stringify(this.data), { mode: 0o600 });
-		renameSync(tmp, this.file);
+	/** Write what is in memory again, sealed or (with `plain`) as plain text. */
+	rewrite(plain = false): void {
+		this.f.write(JSON.stringify(this.data), plain);
+	}
+	private save(next: Record<string, string>): void {
+		this.f.write(JSON.stringify(next));
+		this.data = next;
 	}
 }

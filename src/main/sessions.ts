@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { NetworkError, UserError } from './errors';
 import { log } from './log';
 import { generateCode } from './totp';
+import { SecretFile, type Vault } from './vault';
 
 /**
  * Web sessions for confirmations.
@@ -42,12 +42,22 @@ export function sessionCookie(steamId: string, accessToken: string): string {
 	return `steamLoginSecure=${steamId}%7C%7C${encodeURIComponent(accessToken)}`;
 }
 
-/** Plain refresh tokens in one file, kept out of the maFiles so those stay untouched. */
+/** Refresh tokens in one file, kept out of the maFiles so those stay untouched. Encrypted with the master password when there is one. */
 export class TokenStore {
 	private tokens: Record<string, string> = {};
-	constructor(private readonly file: string) {
+	private readonly f: SecretFile;
+	constructor(file: string, vault?: Vault) {
+		this.f = new SecretFile(file, 'sessions', vault);
+		this.reload();
+	}
+	get locked(): boolean {
+		return this.f.locked;
+	}
+	reload(): void {
+		this.tokens = {};
 		try {
-			if (existsSync(file)) this.tokens = JSON.parse(readFileSync(file, 'utf8'));
+			const text = this.f.read();
+			if (text) this.tokens = JSON.parse(text);
 		} catch {
 			this.tokens = {};
 		}
@@ -57,17 +67,20 @@ export class TokenStore {
 		return typeof t === 'string' ? t : undefined;
 	}
 	set(steamId: string, token: string): void {
-		this.tokens[steamId] = token;
-		this.save();
+		this.save({ ...this.tokens, [steamId]: token });
 	}
 	delete(steamId: string): void {
-		delete this.tokens[steamId];
-		this.save();
+		if (this.tokens[steamId] === undefined) return;
+		const next = { ...this.tokens };
+		delete next[steamId];
+		this.save(next);
 	}
-	private save(): void {
-		const tmp = `${this.file}.tmp`;
-		writeFileSync(tmp, JSON.stringify(this.tokens), { mode: 0o600 });
-		renameSync(tmp, this.file);
+	rewrite(plain = false): void {
+		this.f.write(JSON.stringify(this.tokens), plain);
+	}
+	private save(next: Record<string, string>): void {
+		this.f.write(JSON.stringify(next));
+		this.tokens = next;
 	}
 }
 

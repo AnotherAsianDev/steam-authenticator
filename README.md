@@ -81,6 +81,15 @@ The launcher is built from `launcher/launcher.c` (a prebuilt `launcher/Launcher.
 
 To do lists what is missing per account (saved password, revocation code, sign-in, unfinished activation) with the fix inline. Export builds a plain-text list: pick fields and their order, pick the separator (`: ; , . |`, tab, space or your own), see an example with made-up data, then copy or save as .txt.
 
+## Security
+
+The maFiles stay plain on purpose (SDA format, easy to back up). What can be protected is everything else that unlocks an account:
+
+- **Master password** (Settings > Security): encrypts `credentials.json`, `sessions.json` and the saved passwords of trashed accounts with AES-256-GCM. The key is random and stored wrapped by a key derived from your password (scrypt), so changing the password does not re-encrypt anything. Nothing ties it to a PC, so the folder stays portable (for example on a synced drive). Forgetting the password means saved passwords and sign-in tokens are gone; the maFiles are not affected. Turning it off writes the files back as plain text.
+- **Locked mode:** the app asks for the password when it starts. "Open codes only" skips it: codes work, saved passwords and automatic sign-in stay locked and nothing in the encrypted files can be overwritten.
+- **PIN on this PC:** a 4 to 12 digit PIN unlocks without the master password. Its key file lives in `%LOCALAPPDATA%\AuthenticatorDevice`, **not** in the program folder, so a copy of the folder on another PC or in the cloud has no PIN. Five wrong tries delete it. It is a convenience for a PC you trust, not a strong barrier against someone who can read your user files (they can try PINs offline), so use 6 or more digits and disk encryption such as BitLocker.
+- Not covered: malware running as you while the app is unlocked, and the maFiles themselves.
+
 ## Trash
 
 Removing an account moves its maFile (and its saved password) to `data/trash/` instead of deleting it. The Trash page in the sidebar lists them with Restore and Delete forever, plus Empty trash and Open folder. Restoring puts the account and its password back. A removed account is not re-imported on its own from SDA folders; Restore it, or import its file by hand.

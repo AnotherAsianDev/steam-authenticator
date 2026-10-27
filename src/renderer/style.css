@@ -335,3 +335,14 @@ header .actions { gap: 8px; align-items: center; }
 .trash-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; }
 .trash-row .row-actions > * { flex: none; }
 .sid.shown { font-size: 12px; }
+
+/* lock screen and dialogs */
+.lock, .modal { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: var(--bg); -webkit-app-region: drag; }
+.modal { z-index: 50; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(6px); }
+.lock-card { -webkit-app-region: no-drag; width: min(380px, calc(100vw - 48px)); display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 32px 28px; text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; }
+.lock-card.left { align-items: stretch; text-align: left; }
+.lock-card > .ico { color: var(--accent); }
+.lock-card .signin { width: 100%; }
+.lock-card .hint.fine { margin-top: 4px; font-size: 12px; }
+.titlebar { position: relative; z-index: 60; }
+.nav[hidden] { display: none; }

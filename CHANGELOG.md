@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+- Optional **master password** (Settings > Security). Encrypts saved passwords, sign-in tokens and trashed accounts' passwords; the maFiles stay plain. Portable: not tied to a PC or Windows account.
+- Lock screen at start, a Lock/Unlock button in the sidebar, "Open codes only" to skip. Everything that needs a saved password (sign-in, password copy, export, add account) waits for the unlock, and an encrypted file is never overwritten while locked.
+- Optional **PIN for this PC** (4 to 12 digits) so you do not type the master password every time. Stored outside the program folder, removed after 5 wrong tries.
+- Change the master password or turn encryption off again at any time; turning it off writes plain files back.
+
 ## 0.1.5
 - Removing an account now moves it to a Trash (`data/trash/`) instead of deleting it. New Trash page: restore (with the saved password), delete forever, empty, open folder. Removed accounts are no longer re-imported on their own from SDA folders.
 - Own title bar with minimize, maximize and close, in the app's colours.

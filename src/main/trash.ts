@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { UserError } from './errors';
 import { MaFileError, parseMaFile } from './mafile';
+import { parseEnvelope, type Vault } from './vault';
 
 export interface TrashEntry {
 	/** `<steamid>.<milliseconds>`, unique per removal. */
@@ -23,7 +25,10 @@ const ID = /^\d{17}\.\d{10,14}$/;
  * Nothing leaves this folder unless the user empties it.
  */
 export class Trash {
-	constructor(readonly dir: string) {}
+	constructor(
+		readonly dir: string,
+		private readonly vault?: Vault
+	) {}
 
 	private file(id: string, ext: 'maFile' | 'json'): string {
 		if (!ID.test(id)) throw new Error('Invalid trash entry');
@@ -42,7 +47,9 @@ export class Trash {
 		mkdirSync(this.dir, { recursive: true });
 		let id = `${steamId}.${now}`;
 		while (existsSync(this.file(id, 'maFile'))) id = `${steamId}.${++now}`;
-		this.write(this.file(id, 'json'), JSON.stringify({ removedAt: Math.floor(now / 1000), ...(password ? { password } : {}) }));
+		// With a master password the saved password is stored sealed, like credentials.json.
+		const pw = !password ? {} : this.vault?.isSetUp() ? { sealed: this.vault.seal('trash', password) } : { password };
+		this.write(this.file(id, 'json'), JSON.stringify({ removedAt: Math.floor(now / 1000), ...pw }));
 		this.write(this.file(id, 'maFile'), maFile);
 		return id;
 	}
@@ -62,17 +69,18 @@ export class Trash {
 				if (!(err instanceof MaFileError)) throw err;
 			}
 			const meta = this.meta(id);
-			out.push({ id, steamId, name, removedAt: meta.removedAt ?? Math.floor(Number(id.slice(18)) / 1000), hasPassword: !!meta.password });
+			out.push({ id, steamId, name, removedAt: meta.removedAt ?? Math.floor(Number(id.slice(18)) / 1000), hasPassword: !!(meta.password || meta.sealed) });
 		}
 		return out.sort((a, b) => b.removedAt - a.removedAt);
 	}
 
-	private meta(id: string): { removedAt?: number; password?: string } {
+	private meta(id: string): { removedAt?: number; password?: string; sealed?: string } {
 		try {
 			const raw = JSON.parse(readFileSync(this.file(id, 'json'), 'utf8')) as Record<string, unknown>;
 			return {
 				...(typeof raw['removedAt'] === 'number' ? { removedAt: raw['removedAt'] } : {}),
-				...(typeof raw['password'] === 'string' ? { password: raw['password'] } : {})
+				...(typeof raw['password'] === 'string' ? { password: raw['password'] } : {}),
+				...(typeof raw['sealed'] === 'string' ? { sealed: raw['sealed'] } : {})
 			};
 		} catch {
 			return {};
@@ -86,8 +94,28 @@ export class Trash {
 
 	read(id: string): { steamId: string; maFile: string; password?: string } {
 		const maFile = readFileSync(this.file(id, 'maFile'), 'utf8');
-		const password = this.meta(id).password;
+		const m = this.meta(id);
+		let password = m.password;
+		if (m.sealed) {
+			const env = parseEnvelope(m.sealed);
+			if (!env || !this.vault) throw new UserError('That entry cannot be read any more');
+			password = this.vault.openEnvelope('trash', env);
+		}
 		return { steamId: id.slice(0, 17), maFile, ...(password ? { password } : {}) };
+	}
+
+	/** After turning the master password on or off: seal the saved passwords kept here, or write them back as plain text. */
+	convert(sealed: boolean): void {
+		for (const e of this.list()) {
+			const m = this.meta(e.id);
+			const removedAt = m.removedAt ?? e.removedAt;
+			if (sealed && m.password && this.vault) {
+				this.write(this.file(e.id, 'json'), JSON.stringify({ removedAt, sealed: this.vault.seal('trash', m.password) }));
+			} else if (!sealed && m.sealed && this.vault) {
+				const env = parseEnvelope(m.sealed);
+				if (env) this.write(this.file(e.id, 'json'), JSON.stringify({ removedAt, password: this.vault.openEnvelope('trash', env) }));
+			}
+		}
 	}
 
 	discard(id: string): void {

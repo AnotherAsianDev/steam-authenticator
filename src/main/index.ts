@@ -20,6 +20,7 @@ import { StateCache } from './statecache';
 import { Enrollment, httpPost, steamLogin } from './enroll';
 import { MaFileStore } from './store';
 import { Trash } from './trash';
+import { checkPin, DevicePin, Vault } from './vault';
 import { fitWindowState, loadWindowState, saveWindowState } from './windowstate';
 import { generateCode, secondsRemaining } from './totp';
 
@@ -33,7 +34,10 @@ const clockReady = syncClock();
 const migrated = migrateLegacy(legacyData, layout);
 const data = layout.data;
 const store = new MaFileStore(layout.maFiles);
-const trash = new Trash(join(data, 'trash'));
+const vault = new Vault(join(data, 'vault.json'));
+// The PIN lives on this PC only, never in the (possibly synced) program folder.
+const devicePin = new DevicePin(join(process.env['LOCALAPPDATA'] ?? app.getPath('appData'), 'AuthenticatorDevice'), () => vault.id);
+const trash = new Trash(join(data, 'trash'), vault);
 log.init(join(data, 'log.jsonl'), () => secretValues(), () => win?.webContents.send('logChanged'));
 process.on('uncaughtException', (err) => log.error('app', 'Unexpected error', err));
 process.on('unhandledRejection', (err) => log.error('app', 'Unhandled error', err));
@@ -51,8 +55,8 @@ const secretValues = (): string[] => {
 const settings = new SettingsStore(join(data, 'settings.json'));
 let win: BrowserWindow | null = null;
 
-const credentials = new CredentialStore(join(data, 'credentials.json'));
-const tokens = new TokenStore(join(data, 'sessions.json'));
+const credentials = new CredentialStore(join(data, 'credentials.json'), vault);
+const tokens = new TokenStore(join(data, 'sessions.json'), vault);
 const avatars = new AvatarCache(join(data, 'avatars'), () => win?.webContents.send('changed'));
 const accounts = new Accounts({
 	cache: new StateCache(join(data, 'cache.json')),
@@ -102,6 +106,38 @@ function known(steamId: unknown): string {
 	const id = str(steamId, 'account');
 	if (!accounts.get(id)) throw new UserError('Unknown account');
 	return id;
+}
+
+/** Anything that reads or writes saved passwords waits for the master password. */
+function needUnlocked(): void {
+	if (!vault.isUnlocked()) throw new UserError('Locked. Unlock with your master password first');
+}
+const vaultInfo = () => ({
+	enabled: vault.isSetUp(),
+	locked: !vault.isUnlocked(),
+	pin: vault.isSetUp() && devicePin.isSet(),
+	pinTries: devicePin.attemptsLeft()
+});
+let startupDone = false;
+/** One round of checks when the app starts, once the secrets it needs are available. */
+function startupCheck(): void {
+	if (startupDone || !settings.get().checkOnStartup || !vault.isUnlocked()) return;
+	startupDone = true;
+	// Confirmation requests are signed with the time, so the clock comes first.
+	void clockReady.then(() => accounts.refreshAll(600));
+}
+function afterUnlock(): void {
+	credentials.reload();
+	tokens.reload();
+	if (credentials.locked || tokens.locked) {
+		vault.lock();
+		credentials.reload();
+		tokens.reload();
+		throw new UserError('That key does not open the saved files. Use the master password');
+	}
+	log.info('vault', 'Unlocked');
+	win?.webContents.send('changed');
+	startupCheck();
 }
 
 function handle<T>(channel: string, fn: (...args: any[]) => T | Promise<T>): void {
@@ -208,6 +244,7 @@ function registerIpc(): void {
 	});
 	handle('copyField', (steamId: unknown, field: unknown) => {
 		const a = accounts.get(known(steamId))!;
+		if (field === 'password') needUnlocked();
 		const values: Record<string, string | undefined> = {
 			username: a.accountName,
 			steamId: a.steamId,
@@ -240,14 +277,19 @@ function registerIpc(): void {
 		return publicStatus(id);
 	});
 	handle('signIn', async (steamId: unknown, password: unknown, save: unknown) => {
+		needUnlocked();
 		const id = known(steamId);
 		await accounts.signIn(id, password === undefined || password === '' ? undefined : str(password, 'password'), save === true);
 		return publicStatus(id);
 	});
 	handle('setPassword', async (steamId: unknown, password: unknown) => {
+		needUnlocked();
 		return accounts.setPassword(known(steamId), str(password, 'password'));
 	});
-	handle('clearPassword', (steamId: unknown) => accounts.clearPassword(known(steamId)));
+	handle('clearPassword', (steamId: unknown) => {
+		needUnlocked();
+		accounts.clearPassword(known(steamId));
+	});
 
 	handle('import', async () => {
 		const picked = await dialog.showOpenDialog(win!, {
@@ -342,8 +384,10 @@ function registerIpc(): void {
 				return { username: a.accountName, password: credentials.get(id), steamId: a.steamId, sharedSecret: a.sharedSecret, identitySecret: a.identitySecret, revocationCode: a.revocationCode };
 			});
 	};
-	const runExport = (ids: unknown, fields: unknown, delimiter: unknown, skip: unknown) =>
-		buildExport(exportRows(ids), cleanFields(fields), cleanDelimiter(delimiter), skip === true);
+	const runExport = (ids: unknown, fields: unknown, delimiter: unknown, skip: unknown) => {
+		needUnlocked();
+		return buildExport(exportRows(ids), cleanFields(fields), cleanDelimiter(delimiter), skip === true);
+	};
 	handle('exportInfo', () =>
 		accounts.ids().map((steamId) => {
 			const a = accounts.get(steamId)!;
@@ -398,9 +442,10 @@ function registerIpc(): void {
 
 	handle('enrollState', () => enrollment.current());
 	handle('enrollReset', () => enrollment.reset());
-	handle('enrollBegin', (name: unknown, password: unknown, save: unknown) =>
-		enrollment.begin(str(name, 'username'), str(password, 'password'), save === true)
-	);
+	handle('enrollBegin', (name: unknown, password: unknown, save: unknown) => {
+		needUnlocked();
+		return enrollment.begin(str(name, 'username'), str(password, 'password'), save === true);
+	});
 	handle('enrollLoginCode', (code: unknown) => enrollment.submitLoginCode(str(code, 'code')));
 	handle('enrollAdd', () => enrollment.addAuthenticator());
 	handle('enrollActivate', (code: unknown) => enrollment.activate(str(code, 'code')));
@@ -412,6 +457,7 @@ function registerIpc(): void {
 	});
 
 	handle('remove', (steamId: unknown) => {
+		needUnlocked();
 		accounts.remove(known(steamId));
 		win?.webContents.send('changed');
 	});
@@ -422,6 +468,7 @@ function registerIpc(): void {
 	};
 	handle('trashList', () => trash.list());
 	handle('trashRestore', (id: unknown) => {
+		needUnlocked();
 		const steamId = accounts.restore(trashId(id));
 		win?.webContents.send('changed');
 		void accounts.refresh(steamId);
@@ -431,6 +478,64 @@ function registerIpc(): void {
 	handle('trashOpen', () => {
 		mkdirSync(trash.dir, { recursive: true });
 		return shell.openPath(trash.dir);
+	});
+
+	handle('vaultInfo', () => vaultInfo());
+	handle('vaultSetUp', (password: unknown) => {
+		if (vault.isSetUp()) throw new UserError('A master password is already set');
+		vault.setUp(str(password, 'password'));
+		credentials.rewrite();
+		tokens.rewrite();
+		trash.convert(true);
+		log.info('vault', 'Master password turned on');
+		return vaultInfo();
+	});
+	handle('vaultUnlock', (password: unknown) => {
+		vault.unlock(str(password, 'password'));
+		afterUnlock();
+		return vaultInfo();
+	});
+	handle('vaultUnlockPin', (pin: unknown) => {
+		vault.unlockWithKey(devicePin.unlock(str(pin, 'PIN')));
+		afterUnlock();
+		return vaultInfo();
+	});
+	handle('vaultLock', () => {
+		if (!vault.isSetUp()) throw new UserError('No master password is set');
+		vault.lock();
+		credentials.reload();
+		tokens.reload();
+		log.info('vault', 'Locked');
+		return vaultInfo();
+	});
+	handle('vaultChange', (oldPassword: unknown, next: unknown) => {
+		needUnlocked();
+		vault.changePassword(str(oldPassword, 'password'), str(next, 'new password'));
+		return vaultInfo();
+	});
+	handle('vaultRemove', (password: unknown) => {
+		needUnlocked();
+		vault.verify(str(password, 'password'));
+		// Plain files first, then the key goes: a failure in between loses nothing.
+		credentials.rewrite(true);
+		tokens.rewrite(true);
+		trash.convert(false);
+		devicePin.remove();
+		vault.remove(str(password, 'password'));
+		log.info('vault', 'Master password turned off');
+		return vaultInfo();
+	});
+	handle('pinSet', (pin: unknown) => {
+		needUnlocked();
+		if (!vault.isSetUp()) throw new UserError('Turn on the master password first');
+		const p = str(pin, 'PIN');
+		checkPin(p);
+		devicePin.set(p, vault.exportKey());
+		return vaultInfo();
+	});
+	handle('pinRemove', () => {
+		devicePin.remove();
+		return vaultInfo();
 	});
 
 	handle('winMinimize', () => win?.minimize());
@@ -536,11 +641,7 @@ app.whenReady().then(async () => {
 	const names = [...dropped.added, ...imported.added];
 	if (names.length) win?.webContents.once('did-finish-load', () => notice(`Imported ${names.join(', ')}`));
 	schedulePolling();
-	if (settings.get().checkOnStartup) {
-		// Confirmation requests are signed with the time, so the clock comes first.
-		await clockReady;
-		void accounts.refreshAll(600);
-	}
+	startupCheck();
 	app.on('activate', () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();
 	});
