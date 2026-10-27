@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { NetworkError, UserError } from './errors';
+import { log } from './log';
 import { generateCode } from './totp';
 
 /**
@@ -143,7 +144,10 @@ export async function signIn(
 		const timer = setTimeout(() => fail('Steam did not finish the sign-in in time'), 60_000);
 		session.on('authenticated', () => finish(() => resolve(session.refreshToken)));
 		session.on('timeout', () => fail('Steam did not finish the sign-in in time'));
-		session.on('error', (err: Error) => (NETWORK.test(err.message) ? failNetwork() : fail(err.message || 'Sign-in failed')));
+		session.on('error', (err: Error) => {
+			log.warn('sign-in', `${accountName}: steam-session error: ${err.message}`, err);
+			NETWORK.test(err.message) ? failNetwork() : fail(err.message || 'Sign-in failed');
+		});
 		session
 			.startWithCredentials({
 				accountName,
@@ -153,7 +157,10 @@ export async function signIn(
 			.then((r) => {
 				if (r.actionRequired) fail('Steam wants an extra confirmation this app cannot do');
 			})
-			.catch((err: Error) => (NETWORK.test(err.message) ? failNetwork() : fail(friendly(err))));
+			.catch((err: Error) => {
+				log.warn('sign-in', `${accountName}: sign-in failed: ${err.message}`, err);
+				NETWORK.test(err.message) ? failNetwork() : fail(friendly(err));
+			});
 	});
 }
 

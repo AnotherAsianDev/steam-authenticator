@@ -13,6 +13,7 @@ import { MaFileError, parseMaFile } from './mafile';
 import { SettingsStore } from './settings';
 import { mintAccessToken, signIn, TokenStore } from './sessions';
 import { buildExport, cleanDelimiter, cleanFields, withRevocationCode, type ExportRow } from './exporter';
+import { log } from './log';
 import { migrateLegacy, resolveLayout } from './paths';
 import { openSteamWindow, TARGETS } from './browser';
 import { StateCache } from './statecache';
@@ -26,6 +27,20 @@ if (layout.portable) app.setPath('userData', layout.chromium);
 const migrated = migrateLegacy(legacyData, layout);
 const data = layout.data;
 const store = new MaFileStore(layout.maFiles);
+log.init(join(data, 'log.jsonl'), () => secretValues(), () => win?.webContents.send('logChanged'));
+process.on('uncaughtException', (err) => log.error('app', 'Unexpected error', err));
+process.on('unhandledRejection', (err) => log.error('app', 'Unhandled error', err));
+const secretValues = (): string[] => {
+	const out: string[] = [];
+	for (const id of accounts.ids()) {
+		const a = accounts.get(id)!;
+		out.push(a.sharedSecret, a.identitySecret);
+		if (a.revocationCode) out.push(a.revocationCode);
+		const pw = credentials.get(id);
+		if (pw) out.push(pw);
+	}
+	return out;
+};
 const settings = new SettingsStore(join(data, 'settings.json'));
 let win: BrowserWindow | null = null;
 
@@ -343,6 +358,18 @@ function registerIpc(): void {
 		return { count: r.count, path: picked.filePath };
 	});
 	handle('version', () => app.getVersion());
+	handle('logList', () => log.list());
+	handle('logClear', () => log.clear());
+	handle('logCopy', () => copyText(log.text()));
+	handle('logClient', (message: unknown) => {
+		if (typeof message === 'string') log.error('window', message.slice(0, 1000));
+	});
+	handle('logSave', async () => {
+		const picked = await dialog.showSaveDialog(win!, { title: 'Save log', defaultPath: 'authenticator-log.txt', filters: [{ name: 'Text', extensions: ['txt'] }] });
+		if (picked.canceled || !picked.filePath) return null;
+		writeFileSync(picked.filePath, log.text(), { mode: 0o600 });
+		return picked.filePath;
+	});
 	handle('progress', () => accounts.progress());
 	handle('allConfirmations', () =>
 		accounts.ids().map((steamId) => ({
@@ -422,6 +449,7 @@ app.whenReady().then(async () => {
 	registerIpc();
 	mkdirSync(store.dir, { recursive: true });
 	createWindow();
+	log.info('app', `Started version ${app.getVersion()}, ${accounts.ids().length} account(s), ${layout.portable ? 'portable' : 'user data'} folder`);
 	if (migrated.length) win?.webContents.once('did-finish-load', () => notice('Your earlier data was copied next to the program (maFiles and data folders)'));
 	await syncClock();
 	// Pick up anything dropped into the folder while the app was closed, then watch it.

@@ -1,3 +1,4 @@
+import { log } from './log';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -81,7 +82,8 @@ export class AvatarCache {
 			mkdirSync(this.dir, { recursive: true });
 			writeFileSync(this.file(steamId), buf);
 			this.onUpdate();
-		} catch {
+		} catch (err) {
+			log.info('avatar', `${steamId}: profile picture not loaded: ${err instanceof Error ? err.message : String(err)}`);
 			this.failed.set(steamId, Date.now());
 		}
 	}

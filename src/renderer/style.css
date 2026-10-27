@@ -300,3 +300,21 @@ h2 { margin: 24px 0 10px; }
 .row > .badge { grid-column: 3; }
 .row > .code { grid-column: 4; }
 .row > .more { grid-column: 5; }
+
+/* log */
+.log-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+.log-entry { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; }
+.log-entry summary { display: grid; grid-template-columns: 54px 150px 130px 1fr; gap: 10px; align-items: baseline; cursor: pointer; list-style: none; }
+.log-entry.plain summary { cursor: default; }
+.log-entry summary::-webkit-details-marker { display: none; }
+.log-entry .lvl { font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+.log-entry.error { border-left: 3px solid var(--danger); }
+.log-entry.error .lvl { color: var(--danger); }
+.log-entry.warn { border-left: 3px solid var(--warn); }
+.log-entry.warn .lvl { color: var(--warn); }
+.log-entry.info .lvl { color: var(--muted); }
+.log-entry .when, .log-entry .area { color: var(--muted); }
+.log-entry .msg { overflow-wrap: anywhere; }
+.log-detail { margin: 10px 0 2px; padding: 10px 12px; background: var(--raised); border-radius: 8px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+header .actions { gap: 8px; align-items: center; }
+@media (max-width: 820px) { .log-entry summary { grid-template-columns: 1fr; gap: 2px; } }

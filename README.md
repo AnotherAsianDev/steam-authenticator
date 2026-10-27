@@ -80,3 +80,7 @@ The launcher is built from `launcher/launcher.c` (a prebuilt `launcher/Launcher.
 ## To do and Export
 
 To do lists what is missing per account (saved password, revocation code, sign-in, unfinished activation) with the fix inline. Export builds a plain-text list: pick fields and their order, pick the separator (`: ; , . |`, tab, space or your own), see an example with made-up data, then copy or save as .txt.
+
+## Log
+
+The Log page shows warnings and errors with full details for troubleshooting (also saved in `data/log.jsonl`). Secrets, passwords, tokens and revocation codes are redacted before they are stored, so a log can be shared safely.

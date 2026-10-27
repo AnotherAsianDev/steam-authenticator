@@ -53,6 +53,14 @@ interface TodoItem {
 	name: string;
 	detail: string;
 }
+interface LogEntry {
+	time: number;
+	level: 'error' | 'warn' | 'info';
+	area: string;
+	message: string;
+	detail?: string;
+	count?: number;
+}
 type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 type P<T> = Promise<Result<T>>;
 declare const api: {
@@ -75,6 +83,12 @@ declare const api: {
 	progress(): P<{ running: boolean; done: number; total: number }>;
 	openSteam(id: string, target: string): P<void>;
 	version(): P<string>;
+	logList(): P<LogEntry[]>;
+	logClear(): P<void>;
+	logCopy(): P<void>;
+	logSave(): P<string | null>;
+	logClient(message: string): P<void>;
+	onLogChanged(cb: () => void): void;
 	todo(): P<TodoItem[]>;
 	todoIgnore(id: string, kind: string): P<Settings>;
 	setRevocation(id: string, code: string): P<void>;
@@ -102,7 +116,7 @@ declare const api: {
 const root = document.getElementById('app')!;
 let settings: Settings;
 let timer: number | undefined;
-let view: { name: 'list' } | { name: 'todo' } | { name: 'export' } | { name: 'confirms' } | { name: 'add' } | { name: 'settings' } | { name: 'detail'; id: string } = { name: 'list' };
+let view: { name: 'list' } | { name: 'log' } | { name: 'todo' } | { name: 'export' } | { name: 'confirms' } | { name: 'add' } | { name: 'settings' } | { name: 'detail'; id: string } = { name: 'list' };
 let refreshView: () => void = () => undefined;
 const avatarImages = new Map<string, string>();
 
@@ -128,6 +142,7 @@ const ICONS: Record<string, string> = {
 	export: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>',
 	add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
 	settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+	log: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
 	folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
 };
 const icon = (name: string): HTMLElement =>
@@ -158,6 +173,7 @@ function buildShell(): void {
 			'nav',
 			{ class: 'navlist bottom' },
 			item('folder', 'Storage folder', () => void api.reveal()),
+			item('log', 'Log', () => void navigate({ name: 'log' }), true),
 			item('settings', 'Settings', () => void navigate({ name: 'settings' }))
 		)
 	);
@@ -242,6 +258,21 @@ const setTabCount = (): void => {
 	const c = navButtons.get('confirms')?.querySelector('.count');
 	if (c) c.textContent = pendingTotal ? String(pendingTotal) : '';
 };
+async function updateLogCount(): Promise<void> {
+	const r = await api.logList();
+	const c = navButtons.get('log')?.querySelector('.count');
+	if (r.ok && c) {
+		const since = Number(sessionStorageGet('logSeen') ?? 0);
+		const n = r.value.filter((e) => e.level === 'error' && e.time > since).length;
+		c.textContent = n ? String(n) : '';
+	}
+}
+function sessionStorageGet(k: string): string | null {
+	try { return window.sessionStorage.getItem(k); } catch { return null; }
+}
+function sessionStorageSet(k: string, v: string): void {
+	try { window.sessionStorage.setItem(k, v); } catch { /* not available */ }
+}
 async function updateTodoCount(): Promise<void> {
 	const r = await api.todo();
 	const c = navButtons.get('todo')?.querySelector('.count');
@@ -274,6 +305,7 @@ async function navigate(v: typeof view): Promise<void> {
 	else if (v.name === 'add') await addScreen();
 	else if (v.name === 'confirms') await confirmsScreen();
 	else if (v.name === 'todo') await todoScreen();
+	else if (v.name === 'log') await logScreen();
 	else if (v.name === 'export') await exportScreen();
 	else await detailScreen(v.id);
 }
@@ -600,6 +632,66 @@ async function todoScreen(): Promise<void> {
 	}
 	refreshView = () => undefined;
 	await load();
+}
+
+// -------------------------------------------------------------------- log --
+
+async function logScreen(): Promise<void> {
+	sessionStorageSet('logSeen', String(Math.floor(Date.now() / 1000)));
+	void updateLogCount();
+	let entries: LogEntry[] = [];
+	let only: 'all' | 'problems' = 'problems';
+	let q = '';
+	const list = el('div', { class: 'log-list' });
+	const search = el('input', { type: 'text', class: 'search', placeholder: 'Filter log', ariaLabel: 'Filter log', spellcheck: false });
+	const chips = el('div', { class: 'filters' });
+	const header = el(
+		'header',
+		{},
+		el('h1', { class: 'title', textContent: 'Log' }),
+		el('div', { class: 'actions' },
+			el('button', { class: 'small', type: 'button', textContent: 'Copy all', onclick: async () => { const r = await api.logCopy(); toast(r.ok ? 'Log copied' : r.error, !r.ok); } }),
+			el('button', { class: 'small', type: 'button', textContent: 'Save…', onclick: async () => { const r = await api.logSave(); if (!r.ok) toast(r.error, true); else if (r.value) toast('Log saved'); } }),
+			confirmButton('Clear', 'Click again', 'small danger', async () => { await api.logClear(); await load(); })
+		)
+	);
+	const body = el('main', {}, el('div', { class: 'filterbar' }, search, chips), el('p', { class: 'hint', textContent: 'Full error details for troubleshooting. Passwords, secrets, tokens and revocation codes are hidden before anything is written here.' }), list);
+	show(header, body);
+	const time = (t: number): string => new Date(t * 1000).toLocaleString();
+	function drawChips(): void {
+		chips.replaceChildren(
+			...([['problems', 'Warnings and errors'], ['all', 'Everything']] as const).map(([id, text]) =>
+				el('button', { class: `fchip${only === id ? ' on' : ''}`, type: 'button', textContent: text, onclick: () => { only = id; drawChips(); draw(); } })
+			)
+		);
+	}
+	function draw(): void {
+		const needle = q.trim().toLowerCase();
+		const shown = entries.filter((e) => (only === 'all' || e.level !== 'info') && (!needle || `${e.area} ${e.message} ${e.detail ?? ''}`.toLowerCase().includes(needle)));
+		list.replaceChildren(
+			...(shown.length
+				? shown.map((e) => {
+						const row = el('details', { class: `log-entry ${e.level}` });
+						const sum = el('summary', {}, el('span', { class: 'lvl', textContent: e.level }), el('span', { class: 'when', textContent: time(e.time) }), el('span', { class: 'area', textContent: e.area }), el('span', { class: 'msg', textContent: `${e.message}${e.count && e.count > 1 ? `  (x${e.count})` : ''}` }));
+						row.append(sum);
+						if (e.detail) row.append(el('pre', { class: 'log-detail', textContent: e.detail }));
+						else row.classList.add('plain');
+						return row;
+					})
+				: [el('p', { class: 'hint center-text', textContent: only === 'problems' ? 'No warnings or errors.' : 'The log is empty.' })])
+		);
+	}
+	async function load(): Promise<void> {
+		const r = await api.logList();
+		if (!r.ok) return toast(r.error, true);
+		entries = r.value;
+		draw();
+	}
+	search.addEventListener('input', () => { q = search.value; draw(); });
+	drawChips();
+	refreshView = () => undefined;
+	await load();
+	timer = window.setInterval(() => void load(), 3000);
 }
 
 // ----------------------------------------------------------------- export --
@@ -1264,11 +1356,15 @@ async function boot(): Promise<void> {
 	if (s.ok) applySettings(s.value);
 	else applySettings({ theme: 'system', density: 'comfortable', showSteamId: false, showAvatars: true, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false });
 	api.onChanged(() => refreshView());
+	api.onLogChanged(() => void updateLogCount());
+	window.addEventListener('error', (e) => void api.logClient(`${e.message} (${e.filename}:${e.lineno})`));
+	window.addEventListener('unhandledrejection', (e) => void api.logClient(`Unhandled: ${String((e.reason as Error)?.message ?? e.reason)}`));
 	api.onNotice((n) => {
 		toast(n.message, n.error);
 		refreshView();
 	});
 	buildShell();
+	void updateLogCount();
 	await listScreen();
 }
 

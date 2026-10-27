@@ -1,4 +1,5 @@
 import { NetworkError, UserError } from './errors';
+import { log } from './log';
 import { ConfirmationError, type Action, type Confirmation, type ConfirmationsClient } from './confirmations';
 import type { CredentialStore } from './credentials';
 import { parseMaFile, type ParsedMaFile } from './mafile';
@@ -202,6 +203,7 @@ export class Accounts {
 			try {
 				const token = await this.accessToken(steamId, attempt > 0);
 				const list = await this.d.client.list({ steamId, identitySecret }, sessionCookie(steamId, token));
+				if (list.unreadable) log.warn('confirmations', `${this.parsed.get(steamId)?.accountName}: ${list.unreadable} confirmation(s) could not be read`);
 				const ok: Status = { state: 'ok', items: list.items, unreadable: list.unreadable, fetchedAt: this.d.steamNow() };
 				this.d.cache?.setStatus(steamId, { fetchedAt: ok.fetchedAt, items: ok.items, unreadable: ok.unreadable });
 				return ok;
@@ -235,6 +237,7 @@ export class Accounts {
 		} catch (err) {
 			// No connection says nothing about the password: no backoff, and not reported as a rejection.
 			if (err instanceof NetworkError) throw err;
+			log.warn('sign-in', `${account.accountName}: saved password sign-in failed: ${err instanceof Error ? err.message : String(err)}`, err);
 			// A rejected saved password is not retried for half an hour, or until it is changed.
 			this.autoSignInRetryAt.set(steamId, this.d.steamNow() + 1800);
 			if (err instanceof UserError && /too many attempts/i.test(err.message)) this.pause(1800);
@@ -262,6 +265,9 @@ export class Accounts {
 				return this.set(steamId, await this.fetchList(steamId, account.identitySecret));
 			}
 		} catch (err) {
+			const who = this.parsed.get(steamId)?.accountName ?? steamId;
+			if (Accounts.needsSignIn(err)) log.info('confirmations', `${who}: sign-in needed${signInMessage ? ` (${signInMessage})` : ''}`);
+			else log.warn('confirmations', `${who}: check failed: ${err instanceof Error ? err.message : String(err)}`, err);
 			if (Accounts.needsSignIn(err)) {
 				this.dropAccess(steamId);
 				return this.set(steamId, { state: 'signin', ...(signInMessage ? { message: signInMessage } : {}), items: [], unreadable: 0, fetchedAt: this.d.steamNow() });

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.4
+- New Log page in the sidebar: every warning and error with its full details (error codes, stack, what Steam answered), filter, copy all, save as .txt, clear. Stored in `data/log.jsonl`. Passwords, secrets, tokens and revocation codes are hidden before anything is written.
+
 ## 0.1.3
 - Saving a password now checks it with a real sign-in first. A wrong password is refused and not saved; with no connection it is saved and marked as unchecked.
 

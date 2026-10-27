@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NetworkError, UserError } from './errors';
+import { log } from './log';
 import { parseMaFile } from './mafile';
 import { deviceId } from './confirmations';
 import type { MaFileStore } from './store';
@@ -221,6 +222,7 @@ export class Enrollment {
 				throw new UserError(UNCERTAIN_ADD);
 			}
 			const body = parseResponse(res.text);
+			log.info('enroll', `AddAuthenticator for ${this.accountName}: HTTP ${res.status}, status=${String(body?.['status'])}, fields=${body ? Object.keys(body).join(',') : 'unreadable'}`);
 			if (!body) {
 				this.reset();
 				throw new UserError(UNCERTAIN_ADD);
@@ -307,6 +309,7 @@ export class Enrollment {
 					);
 				}
 				const body = parseResponse(res.text);
+				log.info('enroll', `FinalizeAddAuthenticator for ${this.accountName}: HTTP ${res.status}, success=${String(body?.['success'])}, status=${String(body?.['status'])}, want_more=${String(body?.['want_more'])}`);
 				if (!body) throw new UserError('Steam sent an unreadable answer. Check Steam Guard in the Steam app before retrying');
 				if (body['want_more'] === true) {
 					// Steam wants a code from the next window as well.
