@@ -19,7 +19,7 @@ export interface LineResult {
 }
 
 /**
- * One account per line: username:password:shared_secret:identity_secret.
+ * One account per line: username:password:shared_secret:identity_secret[:revocation_code].
  * The separator may be any of : ; , | tab. The two secrets are base64 and cannot contain
  * a separator, so they are taken from the right and whatever is left in the middle is the
  * password (which may contain the separator itself).
@@ -32,6 +32,9 @@ export function parseLines(text: string, separator: string): { entries: { line: 
 		const t = raw.trim();
 		if (!t) return;
 		const parts = t.split(separator);
+		// An optional revocation code (R and 5 digits) can end the line. A secret is far longer, so this is unambiguous.
+		let revocationCode: string | undefined;
+		if (parts.length >= 5 && /^R\d{5}$/i.test(parts[parts.length - 1]!.trim())) revocationCode = parts.pop()!.trim().toUpperCase();
 		const label = parts[0]?.trim() || `Line ${line}`;
 		if (parts.length < 4) return void errors.push({ line, label, message: 'Needs 4 values: username, password, shared_secret, identity_secret' });
 		const identitySecret = parts[parts.length - 1]!.trim();
@@ -47,7 +50,7 @@ export function parseLines(text: string, separator: string): { entries: { line: 
 		} catch {
 			return void errors.push({ line, label, message: 'The secrets are not valid. Check the order: shared_secret first, then identity_secret' });
 		}
-		entries.push({ line, entry: { username, password, sharedSecret, identitySecret } });
+		entries.push({ line, entry: { username, password, sharedSecret, identitySecret, ...(revocationCode ? { revocationCode } : {}) } });
 	});
 	return { entries, errors };
 }

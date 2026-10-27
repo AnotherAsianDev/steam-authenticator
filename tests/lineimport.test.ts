@@ -15,6 +15,13 @@ describe('parseLines', () => {
 		expect(r.entries[0]!.entry).toMatchObject({ username: 'olam', password: 'pa:ss:word', sharedSecret: SS, identitySecret: IS });
 		expect(r.entries[1]!.entry.username).toBe('bob');
 	});
+	it('takes an optional revocation code at the end of the line', () => {
+		const r = parseLines(`a:pw:${SS}:${IS}:r12345\nb:pw:${SS}:${IS}`, ':');
+		expect(r.errors).toEqual([]);
+		expect(r.entries[0]!.entry.revocationCode).toBe('R12345');
+		expect(r.entries[1]!.entry.revocationCode).toBeUndefined();
+		expect(parseMaFile(buildMaFile(r.entries[0]!.entry, ID, 'rt')).revocationCode).toBe('R12345');
+	});
 	it('names the problem per line', () => {
 		const r = parseLines(`a:b:c\nc:pw:!!!:${IS}\n:pw:${SS}:${IS}`, ':');
 		expect(r.entries).toHaveLength(0);

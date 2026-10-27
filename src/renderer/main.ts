@@ -1256,7 +1256,7 @@ async function addScreen(): Promise<void> {
 			return;
 		}
 
-		const area = el('textarea', { class: 'lines', rows: 6, spellcheck: false, placeholder: 'username:password:shared_secret:identity_secret', ariaLabel: 'Accounts, one per line' });
+		const area = el('textarea', { class: 'lines', rows: 6, spellcheck: false, placeholder: 'username:password:shared_secret:identity_secret:R12345 (revocation code optional)', ariaLabel: 'Accounts, one per line' });
 		const sepRow = el('div', { class: 'filters' });
 		let sep = ':';
 		const draws = (): void =>
@@ -1264,7 +1264,7 @@ async function addScreen(): Promise<void> {
 		draws();
 		const btn = el('button', { class: 'primary', type: 'submit', textContent: 'Import' });
 		const form = el('form', { class: 'signin' }, el('h1', { textContent: 'Import several accounts' }), intro, tabs,
-			el('p', { class: 'hint', textContent: 'One account per line: username, password, shared_secret, identity_secret. A password may contain the separator.' }),
+			el('p', { class: 'hint', textContent: 'One account per line: username, password, shared_secret, identity_secret, and optionally the revocation code at the end (R12345). A password may contain the separator.' }),
 			area, el('p', { class: 'hint', textContent: 'Separator between the values:' }), sepRow, btn, out);
 		submitting(form, async () => {
 			btn.textContent = 'Importing… (about 2 seconds per account)';
