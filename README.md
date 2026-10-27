@@ -68,11 +68,13 @@ On an account's page, Profile / Inventory / Trade offers / Market / Store / Acco
 
 ```
 Authenticator.exe   small launcher, double-click this
-maFiles/            your maFiles, like SDA (drop files here)
-data/               settings, saved passwords, caches
-app/                the program itself, you can ignore it
+app/                the program itself
+maFiles/            your maFiles, like SDA (created on first start)
+data/               settings, saved passwords, caches (created on first start)
 ```
 Everything lives next to the exe, so copying or backing up the folder moves it all. If the folder is not writable (for example inside Program Files) the per-user app data folder is used instead. On first start, data from the earlier per-user location is copied over (the old copy is left in place).
+
+**Updating:** download the new release, drag the new folder over the old one and choose "Replace the files in the destination". The release contains no `maFiles` or `data` folder, so your accounts and settings are never touched, and the app recreates anything missing by itself. Close the app first.
 
 The launcher is built from `launcher/launcher.c` (a prebuilt `launcher/Launcher.exe` is included).
 

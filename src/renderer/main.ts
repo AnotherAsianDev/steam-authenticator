@@ -74,6 +74,7 @@ declare const api: {
 	refreshAll(): P<void>;
 	progress(): P<{ running: boolean; done: number; total: number }>;
 	openSteam(id: string, target: string): P<void>;
+	version(): P<string>;
 	todo(): P<TodoItem[]>;
 	todoIgnore(id: string, kind: string): P<Settings>;
 	setRevocation(id: string, code: string): P<void>;
@@ -1227,9 +1228,11 @@ async function settingsScreen(): Promise<void> {
 			el('h2', { textContent: 'Importing' }),
 			row('Find SDA folders automatically', 'Looks for folders named maFiles in Downloads, Desktop and Documents when the app starts', toggle(s.autoDetect, (v) => void set({ autoDetect: v }), 'Find SDA folders automatically')),
 			el('div', { class: 'setting stack' }, el('span', { class: 'setting-label', textContent: 'Watched folders' }), s.importFolders.length ? folders : el('span', { class: 'hint', textContent: 'None added.' }), el('div', { class: 'row-actions left' }, el('button', { class: 'small', textContent: 'Add folder…', onclick: async () => { const r = await api.addFolder(); if (r.ok) { applySettings(r.value); void settingsScreen(); } else toast(r.error, true); } }), el('button', { class: 'small', textContent: 'Scan now', onclick: async () => { const r = await api.rescan(); if (!r.ok) return toast(r.error, true); toast(r.value.added.length ? `Imported ${r.value.added.join(', ')}` : 'Nothing new found'); } }))),
+			el('p', { class: 'hint fine', id: 'ver' }),
 			el('p', { class: 'hint fine', textContent: 'New accounts are copied; existing ones are never overwritten and your originals are never changed. Passwords you choose to save, and the sign-in token, are kept in plain text (credentials.json and sessions.json) next to your maFiles.' })
 		)
 	);
+	void api.version().then((v) => { const n = document.getElementById('ver'); if (n && v.ok) n.textContent = `Version ${v.value}. To update, drop the new folder over this one and choose Replace. Your maFiles and data stay.`; });
 	refreshView = () => undefined;
 }
 

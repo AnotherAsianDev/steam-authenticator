@@ -342,6 +342,7 @@ function registerIpc(): void {
 		writeFileSync(picked.filePath, r.text, { mode: 0o600 });
 		return { count: r.count, path: picked.filePath };
 	});
+	handle('version', () => app.getVersion());
 	handle('progress', () => accounts.progress());
 	handle('allConfirmations', () =>
 		accounts.ids().map((steamId) => ({

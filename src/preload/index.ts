@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('api', {
 	exportCheck: (ids: string[], fields: string[], d: string, skip: boolean) => call('exportCheck', ids, fields, d, skip),
 	exportCopy: (ids: string[], fields: string[], d: string, skip: boolean) => call('exportCopy', ids, fields, d, skip),
 	exportSave: (ids: string[], fields: string[], d: string, skip: boolean) => call('exportSave', ids, fields, d, skip),
+	version: () => call('version'),
 	progress: () => call('progress'),
 	allConfirmations: () => call('allConfirmations'),
 	openProfile: (id: string) => call('openProfile', id),

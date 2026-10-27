@@ -30,20 +30,17 @@ const built = paths[0];
 // Final layout, kept tidy:
 //   Authenticator-portable/
 //     Authenticator.exe   small launcher
-//     maFiles/            your maFiles, like SDA
-//     data/               settings, saved passwords, caches (created on first start)
+//     (maFiles/ and data/ are created by the app on first start and are NOT in the
+//      release, so dropping a new release over an old folder can never overwrite them)
 //     app/                the program and its support files
 const portable = 'out/Authenticator-portable';
 rmSync(portable, { recursive: true, force: true });
 mkdirSync(portable, { recursive: true });
 cpSync(built, `${portable}/app`, { recursive: true });
-mkdirSync(`${portable}/maFiles`);
-mkdirSync(`${portable}/data`);
 if (!existsSync('launcher/Launcher.exe')) throw new Error('launcher/Launcher.exe is missing');
 cpSync('launcher/Launcher.exe', `${portable}/Authenticator.exe`);
 
 // Only English is used, so the other language packs are just clutter.
 const locales = `${portable}/app/locales`;
 if (existsSync(locales)) for (const f of readdirSync(locales)) if (f !== 'en-US.pak') rmSync(`${locales}/${f}`);
-writeFileSync(`${portable}/maFiles/README.txt`, 'Drop your .maFile files here. They are picked up automatically.\n');
 console.log('Built:', portable);
