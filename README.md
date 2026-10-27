@@ -46,14 +46,13 @@ Minimal desktop Steam Guard authenticator (Electron + TypeScript, no UI framewor
     npm start        (PowerShell: npm.cmd start)
     npm run package:win   builds out/Authenticator-portable (no Node needed to run it)
 
-Tested against a mock Steam and against steam-totp for code/signature parity.
-Not yet verified against live Steam: the sign-in flow and real confirmation responses.
+Code generation is checked against steam-totp for parity (`npm test`).
 
 ## Adding an authenticator to an account that has none
 
 `+` > Add account. Sign in with username and password (plus the emailed code if Steam asks), confirm, and the app asks Steam to attach a Mobile Authenticator. The new secrets and the revocation code are written to `pending/` *before* activation, so a crash or lost connection cannot lose them. After you enter the SMS/email activation code, the maFile moves into the storage folder and the account appears in the list. "Cancel and remove it again" detaches it using the revocation code.
 
-Needs the account to have a confirmed phone number or email. This flow has only been tested against a mocked Steam, not a live account. Write the revocation code down.
+Needs the account to have a confirmed phone number or email. Write the revocation code down.
 
 Click an account name to open its Steam profile; click the code box to copy the code.
 
@@ -63,7 +62,7 @@ Confirmations are checked once at startup (can be turned off in Settings) and wh
 
 ## Open on Steam, signed in
 
-On an account's page, Profile / Inventory / Trade offers / Market / Store / Account open a separate window already logged in as that account (using its saved session; it signs in with the saved password first if needed). Each window has its own in-memory session that is wiped on close, can only stay on Steam domains, and sends other links to your normal browser. Untested against live Steam: if a page asks you to log in anyway, the session token was not accepted for that site.
+On an account's page, Profile / Inventory / Trade offers / Market / Store / Account open a separate window already logged in as that account (using its saved session; it signs in with the saved password first if needed). Each window has its own in-memory session that is wiped on close, can only stay on Steam domains, and sends other links to your normal browser.
 
 ## Folder layout (Windows build)
 
