@@ -388,3 +388,7 @@ textarea.lines { width: 100%; font-family: ui-monospace, Consolas, monospace !im
 label.f { display: flex; flex-direction: column; gap: 4px; }
 .f-label { font-size: 13px; color: var(--text); font-weight: 550; }
 label.f .hint.fine { margin: 0; font-size: 12px; }
+
+.update-note { position: fixed; right: 20px; bottom: 20px; z-index: 45; max-width: 360px; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--accent); border-radius: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
+.update-note p { margin: 4px 0 0; }
+.update-note .row-actions { justify-content: flex-end; }

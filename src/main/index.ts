@@ -19,6 +19,7 @@ import { openSteamWindow, TARGETS } from './browser';
 import { StateCache } from './statecache';
 import { Enrollment, httpPost, steamLogin } from './enroll';
 import { MaFileStore } from './store';
+import { UpdateChecker } from './updatecheck';
 import { importLines, importOne, type LineImportDeps, type LineResult } from './lineimport';
 import { Trash } from './trash';
 import { checkPin, DevicePin, Vault } from './vault';
@@ -416,6 +417,21 @@ function registerIpc(): void {
 		return { count: r.count, path: picked.filePath };
 	});
 	handle('version', () => app.getVersion());
+	const updates = new UpdateChecker(join(data, 'update.json'), app.getVersion());
+	/** The notice to show, or nothing: turned off, up to date, not reachable, or dismissed. */
+	handle('updateInfo', async (force: unknown) => {
+		if (!settings.get().checkUpdates && force !== true) return null;
+		const u = await updates.check(force === true);
+		return u && (force === true || u.version !== settings.get().updateDismissed) ? u : null;
+	});
+	handle('updateOpen', async () => {
+		const u = await updates.check();
+		if (u) await shell.openExternal(u.url);
+	});
+	handle('updateDismiss', (version: unknown) => {
+		if (typeof version !== 'string') throw new UserError('Invalid version');
+		return settings.update({ updateDismissed: version });
+	});
 	handle('logList', () => log.list());
 	handle('logErrors', (since: unknown) => log.errorsSince(typeof since === 'number' ? since : 0));
 	handle('logClear', () => log.clear());

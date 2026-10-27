@@ -34,6 +34,8 @@ interface Settings {
 	checkOnStartup: boolean;
 	clipboardClearSeconds: number;
 	autoDetect: boolean;
+	checkUpdates: boolean;
+	updateDismissed: string;
 	importFolders: string[];
 	todoIgnored: string[];
 	exportFields: string[];
@@ -98,6 +100,9 @@ declare const api: {
 	progress(): P<{ running: boolean; done: number; total: number }>;
 	openSteam(id: string, target: string): P<void>;
 	version(): P<string>;
+	updateInfo(force?: boolean): P<{ version: string; url: string } | null>;
+	updateOpen(): P<void>;
+	updateDismiss(version: string): P<Settings>;
 	logList(): P<LogEntry[]>;
 	logClear(): P<void>;
 	logCopy(): P<void>;
@@ -283,6 +288,22 @@ function toast(message: string, error = false): void {
 	document.body.append(t);
 	window.clearTimeout(toastTimer);
 	toastTimer = window.setTimeout(() => t.remove(), 3000);
+}
+
+/** A small notice when a newer release exists. Nothing is downloaded; the button opens the release page. */
+async function checkForUpdate(force = false): Promise<boolean> {
+	if (!force && !settings.checkUpdates) return false;
+	const r = await api.updateInfo(force);
+	document.querySelector('.update-note')?.remove();
+	if (!r.ok || !r.value) return false;
+	const u = r.value;
+	const note = el('div', { class: 'update-note', role: 'status' },
+		el('div', {}, el('strong', { textContent: `Version ${u.version} is available` }), el('p', { class: 'hint fine', textContent: 'Download the new zip from the release page, then drag the new folder over this one and choose Replace.' })),
+		el('div', { class: 'row-actions' },
+			el('button', { class: 'small', type: 'button', textContent: 'Later', onclick: () => { note.remove(); void api.updateDismiss(u.version).then((s) => { if (s.ok) settings = s.value; }); } }),
+			el('button', { class: 'small primary', type: 'button', textContent: 'Open release page', onclick: () => void api.updateOpen() })));
+	document.body.append(note);
+	return true;
 }
 
 function applySettings(s: Settings): void {
@@ -1734,6 +1755,9 @@ async function settingsScreen(): Promise<void> {
 			el('h2', { textContent: 'Security' }),
 			...securityRows(),
 			el('h2', { textContent: 'Importing' }),
+			row('Check for updates', 'Asks GitHub once a day if a newer release exists and tells you. Nothing is downloaded or installed', el('div', { class: 'row-actions left' },
+				el('button', { class: 'small', type: 'button', textContent: 'Check now', onclick: async () => { const found = await checkForUpdate(true); if (!found) toast('You have the latest version'); } }),
+				toggle(s.checkUpdates, (v) => void set({ checkUpdates: v }), 'Check for updates')),),
 			row('Find SDA folders automatically', 'Looks for folders named maFiles in Downloads, Desktop and Documents when the app starts', toggle(s.autoDetect, (v) => void set({ autoDetect: v }), 'Find SDA folders automatically')),
 			el('div', { class: 'setting stack' }, el('span', { class: 'setting-label', textContent: 'Watched folders' }), s.importFolders.length ? folders : el('span', { class: 'hint', textContent: 'None added.' }), el('div', { class: 'row-actions left' }, el('button', { class: 'small', textContent: 'Add folder…', onclick: async () => { const r = await api.addFolder(); if (r.ok) { applySettings(r.value); void settingsScreen(); } else toast(r.error, true); } }), el('button', { class: 'small', textContent: 'Scan now', onclick: async () => { const r = await api.rescan(); if (!r.ok) return toast(r.error, true); toast(r.value.added.length ? `Imported ${r.value.added.join(', ')}` : 'Nothing new found'); } }))),
 			el('p', { class: 'hint fine', id: 'ver' }),
@@ -1750,7 +1774,7 @@ async function settingsScreen(): Promise<void> {
 async function boot(): Promise<void> {
 	const s = await api.settings();
 	if (s.ok) applySettings(s.value);
-	else applySettings({ theme: 'system', density: 'comfortable', showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false });
+	else applySettings({ theme: 'system', density: 'comfortable', showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false, checkUpdates: true, updateDismissed: '' });
 	api.onChanged(() => refreshView());
 	api.onLogChanged(() => {
 		void updateLogCount();
@@ -1778,6 +1802,7 @@ async function boot(): Promise<void> {
 	const v = await api.vaultInfo();
 	if (v.ok) vaultState = v.value;
 	buildShell();
+	void checkForUpdate();
 	updateLockNav();
 	if (vaultState.locked) showLock();
 	void updateLogCount();
