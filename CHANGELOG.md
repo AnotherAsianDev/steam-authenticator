@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.5.0
+- Update notice: once a day the app asks GitHub whether a newer release exists and, if so, shows a small notice with a button that opens the release page. It never downloads or installs anything; you update by dragging the new folder over the old one, as before. "Later" hides the notice for that version. Turn it off, or check right now, under Settings, Check for updates. The only request is to api.github.com, and the result is cached in `data/update.json`.
+
 ## 0.4.2
 - Several accounts: a line can end with an optional revocation code, `username:password:shared_secret:identity_secret:R12345`. Lines without it work as before.
 
