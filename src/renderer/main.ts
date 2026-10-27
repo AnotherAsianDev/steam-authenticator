@@ -175,7 +175,7 @@ const ICONS: Record<string, string> = {
 	todo: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.2 1.2L6.8 5M3.5 12l1.2 1.2L6.8 11M3.5 18l1.2 1.2L6.8 17"/>',
 	export: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>',
 	add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
-	settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+	settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
 	log: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
 	lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 	trash: '<path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3"/>',
@@ -186,6 +186,7 @@ const icon = (name: string): HTMLElement =>
 
 const content = el('div', { class: 'content' });
 const navButtons = new Map<string, HTMLButtonElement>();
+let lockBtn: HTMLButtonElement | undefined;
 const WINDOW_GLYPHS = {
 	min: '<path d="M1 5.5h8"/>',
 	max: '<rect x="1.5" y="1.5" width="7" height="7"/>',
@@ -206,7 +207,9 @@ function titleBar(): HTMLElement {
 	};
 	api.onMaximized(setMax);
 	void api.winState().then((r) => r.ok && setMax(r.value.maximized));
-	return el('div', { class: 'titlebar' }, control('min', 'Minimize', WINDOW_GLYPHS.min, () => api.winMinimize()), max, control('close', 'Close', WINDOW_GLYPHS.close, () => api.winClose()));
+	lockBtn = el('button', { class: 'wc lockbtn', type: 'button', onclick: () => void toggleLock() });
+	updateLockNav();
+	return el('div', { class: 'titlebar' }, lockBtn, control('min', 'Minimize', WINDOW_GLYPHS.min, () => api.winMinimize()), max, control('close', 'Close', WINDOW_GLYPHS.close, () => api.winClose()));
 }
 
 function buildShell(): void {
@@ -231,7 +234,6 @@ function buildShell(): void {
 		el(
 			'nav',
 			{ class: 'navlist bottom' },
-			item('lock', 'Lock', () => void toggleLock()),
 			item('folder', 'Storage folder', () => void api.reveal()),
 			item('trash', 'Trash', () => void navigate({ name: 'trash' })),
 			item('log', 'Log', () => void navigate({ name: 'log' }), true),
@@ -244,7 +246,6 @@ function setNav(): void {
 	const active = view.name === 'list' || view.name === 'detail' ? 'codes' : view.name;
 	navButtons.forEach((b, id) => b.classList.toggle('active', id === active));
 	navButtons.get('folder')?.classList.remove('active');
-	navButtons.get('lock')?.classList.remove('active');
 }
 
 /** Runs a screen's refresh on a timer, but not while the window is hidden or minimized. */
@@ -411,14 +412,17 @@ const backHeader = (title: string): HTMLElement =>
 
 // --------------------------------------------------------------- lock + PIN --
 
+/** The padlock in the title bar: shown once a master password exists; closed while locked. */
 function updateLockNav(): void {
-	const b = navButtons.get('lock');
+	const b = lockBtn;
 	if (!b) return;
 	b.hidden = !vaultState.enabled;
-	const text = vaultState.locked ? 'Unlock' : 'Lock';
+	const text = vaultState.locked ? 'Unlock' : 'Lock now';
 	b.title = text;
-	const label = b.querySelector('.label');
-	if (label) label.textContent = text;
+	b.setAttribute('aria-label', text);
+	b.classList.toggle('locked', vaultState.locked);
+	const shackle = vaultState.locked ? '<path d="M8 11V8a4 4 0 0 1 8 0v3"/>' : '<path d="M8 11V8a4 4 0 0 1 7.6-1.7"/>';
+	b.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/>${shackle}</svg>`;
 }
 
 async function toggleLock(): Promise<void> {
