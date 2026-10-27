@@ -60,3 +60,23 @@ describe('importLines', () => {
 		expect(JSON.stringify(r)).not.toMatch(/hunter2|MDEyMzQ/);
 	});
 });
+
+describe('importOne', () => {
+	const deps = (saved: string[]) => ({ signIn: async () => token(ID), steamNow: () => 1, exists: () => false, save: (id: string, maFile: string) => void saved.push(maFile), pause: async () => undefined });
+	const good = { username: ' olam ', password: 'pw', sharedSecret: SS, identitySecret: IS };
+	it('adds one account and keeps an optional revocation code', async () => {
+		const { importOne } = await import('../src/main/lineimport');
+		const saved: string[] = [];
+		const r = await importOne({ ...good, revocationCode: 'r12345' }, deps(saved));
+		expect(r[0]).toMatchObject({ label: 'olam', ok: true });
+		expect(parseMaFile(saved[0]!)).toMatchObject({ accountName: 'olam', revocationCode: 'R12345' });
+	});
+	it('says which field is wrong', async () => {
+		const { importOne } = await import('../src/main/lineimport');
+		await expect(importOne({ ...good, username: '' }, deps([]))).rejects.toThrow('username');
+		await expect(importOne({ ...good, password: '' }, deps([]))).rejects.toThrow('password');
+		await expect(importOne({ ...good, sharedSecret: '' }, deps([]))).rejects.toThrow('shared_secret');
+		await expect(importOne({ ...good, identitySecret: '!!!' }, deps([]))).rejects.toThrow('identity_secret is not valid');
+		await expect(importOne({ ...good, revocationCode: '123' }, deps([]))).rejects.toThrow('R12345');
+	});
+});

@@ -7,6 +7,8 @@ export interface LineEntry {
 	password: string;
 	sharedSecret: string;
 	identitySecret: string;
+	/** Only known when the person has it; Steam shows it once, when the authenticator is added. */
+	revocationCode?: string;
 }
 
 export interface LineResult {
@@ -67,7 +69,7 @@ export function buildMaFile(e: LineEntry, steamId: string, refreshToken: string)
 	const obj = {
 		shared_secret: e.sharedSecret,
 		serial_number: '',
-		revocation_code: '',
+		revocation_code: e.revocationCode ?? '',
 		uri: '',
 		server_time: '',
 		account_name: e.username,
@@ -97,6 +99,33 @@ export interface LineImportDeps {
 export async function importLines(text: string, separator: string, d: LineImportDeps): Promise<LineResult[]> {
 	if (![':', ';', ',', '|', '\t'].includes(separator)) throw new UserError('Unsupported separator');
 	const { entries, errors } = parseLines(text, separator);
+	return importEntries(entries, errors, d);
+}
+
+/** One account typed into separate fields: the same checks, with a specific message for the first thing that is wrong. */
+export async function importOne(input: Record<string, unknown>, d: LineImportDeps): Promise<LineResult[]> {
+	const get = (k: string): string => (typeof input[k] === 'string' ? (input[k] as string).trim() : '');
+	const username = get('username');
+	const password = typeof input['password'] === 'string' ? (input['password'] as string) : '';
+	const sharedSecret = get('sharedSecret');
+	const identitySecret = get('identitySecret');
+	const revocationCode = get('revocationCode').toUpperCase();
+	if (!username) throw new UserError('Enter the username');
+	if (!password) throw new UserError('Enter the password');
+	for (const [name, v] of [['shared_secret', sharedSecret], ['identity_secret', identitySecret]] as const) {
+		if (!v) throw new UserError(`Enter the ${name}`);
+		try {
+			decodeSecret(v);
+			if (v.length < 16) throw new Error('short');
+		} catch {
+			throw new UserError(`The ${name} is not valid. It looks like Zm9vYmFy… (letters, digits, + / =)`);
+		}
+	}
+	if (revocationCode && !/^R\d{5}$/.test(revocationCode)) throw new UserError('A revocation code is the letter R and 5 digits, for example R12345');
+	return importEntries([{ line: 1, entry: { username, password, sharedSecret, identitySecret, ...(revocationCode ? { revocationCode } : {}) } }], [], d);
+}
+
+async function importEntries(entries: { line: number; entry: LineEntry }[], errors: { line: number; label: string; message: string }[], d: LineImportDeps): Promise<LineResult[]> {
 	const results: (LineResult & { line: number })[] = errors.map((e) => ({ line: e.line, label: e.label, ok: false, message: e.message }));
 	if (entries.length > 50) throw new UserError('At most 50 accounts at a time');
 	const pause = d.pause ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));

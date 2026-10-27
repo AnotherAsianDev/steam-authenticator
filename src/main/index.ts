@@ -19,7 +19,7 @@ import { openSteamWindow, TARGETS } from './browser';
 import { StateCache } from './statecache';
 import { Enrollment, httpPost, steamLogin } from './enroll';
 import { MaFileStore } from './store';
-import { importLines } from './lineimport';
+import { importLines, importOne, type LineImportDeps, type LineResult } from './lineimport';
 import { Trash } from './trash';
 import { checkPin, DevicePin, Vault } from './vault';
 import { fitWindowState, loadWindowState, saveWindowState } from './windowstate';
@@ -446,23 +446,31 @@ function registerIpc(): void {
 
 	handle('enrollState', () => enrollment.current());
 	handle('enrollReset', () => enrollment.reset());
+	const lineDeps = (): LineImportDeps => ({
+		signIn,
+		steamNow,
+		exists: (id) => store.has(id) || trash.steamIds().has(id),
+		save: (id, maFile, password, refresh) => {
+			store.save(id, maFile);
+			credentials.set(id, password);
+			tokens.set(id, refresh);
+		}
+	});
+	const imported = (results: LineResult[]): LineResult[] => {
+		accounts.reload();
+		win?.webContents.send('changed');
+		for (const r of results) if (r.ok) log.info('import', `${r.label}: added from text`);
+		return results;
+	};
 	handle('importLines', async (text: unknown, separator: unknown) => {
 		needUnlocked();
 		if (typeof text !== 'string' || text.length > 200_000 || typeof separator !== 'string') throw new UserError('Invalid input');
-		const results = await importLines(text, separator, {
-			signIn,
-			steamNow,
-			exists: (id) => store.has(id) || trash.steamIds().has(id),
-			save: (id, maFile, password, refresh) => {
-				store.save(id, maFile);
-				credentials.set(id, password);
-				tokens.set(id, refresh);
-			}
-		});
-		accounts.reload();
-		win?.webContents.send('changed');
-		for (const r of results) if (r.ok) log.info('import', `${r.label}: added from a line`);
-		return results;
+		return imported(await importLines(text, separator, lineDeps()));
+	});
+	handle('importOne', async (input: unknown) => {
+		needUnlocked();
+		if (typeof input !== 'object' || input === null) throw new UserError('Invalid input');
+		return imported(await importOne(input as Record<string, unknown>, lineDeps()));
 	});
 	handle('enrollBegin', (name: unknown, password: unknown, save: unknown) => {
 		needUnlocked();

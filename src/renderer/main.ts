@@ -116,6 +116,7 @@ declare const api: {
 	enrollState(): P<EnrollState>;
 	enrollReset(): P<EnrollState>;
 	importLines(text: string, separator: string): P<{ label: string; ok: boolean; message: string }[]>;
+	importOne(input: Record<string, string>): P<{ label: string; ok: boolean; message: string }[]>;
 	enrollBegin(name: string, password: string, save: boolean): P<EnrollState>;
 	enrollLoginCode(code: string): P<EnrollState>;
 	enrollAdd(): P<EnrollState>;
@@ -1207,35 +1208,73 @@ async function addScreen(): Promise<void> {
 		const linesCard = el(
 			'div',
 			{ class: 'card-note' },
-			el('span', { class: 'hint', textContent: 'Have username, password and both secrets?' }),
-			el('button', { class: 'small', type: 'button', textContent: 'Import from text…', onclick: drawLines })
+			el('span', { class: 'hint', textContent: 'Have the password and both secrets?' }),
+			el('button', { class: 'small', type: 'button', textContent: 'Import with secrets…', onclick: () => drawLines() })
 		);
 		body.replaceChildren(form, importCard, linesCard);
 		user.focus();
 	}
 
-	/** username:password:shared_secret:identity_secret, one account per line. */
-	function drawLines(): void {
+	/** Import from secrets: one account in separate fields, or many as username:password:shared_secret:identity_secret lines. */
+	function drawLines(mode: 'one' | 'many' = 'one'): void {
+		const out = el('ul', { class: 'import-results' });
+		const showResults = (r: { label: string; ok: boolean; message: string }[]): void => {
+			out.replaceChildren(...r.map((x) => el('li', { class: x.ok ? 'ok' : 'bad' }, el('strong', { textContent: x.label }), el('span', { class: 'hint', textContent: x.message }))));
+			if (r.some((x) => x.ok)) void updateTodoCount();
+		};
+		const tabs = el('div', { class: 'filters' },
+			...(['one', 'many'] as const).map((m) => el('button', { class: `fchip${mode === m ? ' on' : ''}`, type: 'button', textContent: m === 'one' ? 'One account' : 'Several accounts', onclick: () => drawLines(m) })));
+		const intro = el('p', { class: 'hint', textContent: 'The app signs in once with the password and a code made from the shared secret, to find the SteamID64. Then it creates the maFile and saves the password for automatic sign-in.' });
+		const back = el('button', { class: 'link', type: 'button', textContent: 'Back', onclick: drawCredentials });
+
+		if (mode === 'one') {
+			const field = (label: string, hint: string, type = 'text'): { box: HTMLElement; input: HTMLInputElement } => {
+				const i = input(label, type);
+				i.ariaLabel = label;
+				return { box: el('label', { class: 'f' }, el('span', { class: 'f-label', textContent: label }), i, el('span', { class: 'hint fine', textContent: hint })), input: i };
+			};
+			const u = field('Username', 'The Steam login name');
+			const p = field('Password', 'Only used for this sign-in and then saved for automatic sign-in', 'password');
+			const ss = field('shared_secret', 'From your maFile or the other authenticator. Looks like Zm9vYmFy…=');
+			const ids = field('identity_secret', 'Same place. Used for trade and market confirmations');
+			const rv = field('Revocation code (optional)', 'R and 5 digits, like R12345. Only if you still have it; it cannot be recreated');
+			const btn = el('button', { class: 'primary', type: 'submit', textContent: 'Import account' });
+			const form = el('form', { class: 'signin' }, el('h1', { textContent: 'Import an account' }), intro, tabs, u.box, p.box, ss.box, ids.box, rv.box, btn, out);
+			submitting(form, async () => {
+				btn.textContent = 'Signing in…';
+				const r = await api.importOne({ username: u.input.value, password: p.input.value, sharedSecret: ss.input.value, identitySecret: ids.input.value, revocationCode: rv.input.value });
+				btn.textContent = 'Import account';
+				if (!r.ok) return toast(r.error, true);
+				showResults(r.value);
+				if (r.value.every((x) => x.ok)) {
+					[u, p, ss, ids, rv].forEach((f) => (f.input.value = ''));
+					toast('Account added');
+				}
+			});
+			body.replaceChildren(form, back);
+			u.input.focus();
+			return;
+		}
+
 		const area = el('textarea', { class: 'lines', rows: 6, spellcheck: false, placeholder: 'username:password:shared_secret:identity_secret', ariaLabel: 'Accounts, one per line' });
 		const sepRow = el('div', { class: 'filters' });
 		let sep = ':';
 		const draws = (): void =>
 			sepRow.replaceChildren(...[[':', ':'], [';', ';'], [',', ','], ['|', '|'], ['Tab', '\t']].map(([t, v]) => el('button', { class: `fchip${sep === v ? ' on' : ''}`, type: 'button', textContent: t!, onclick: () => { sep = v!; draws(); } })));
 		draws();
-		const out = el('ul', { class: 'import-results' });
 		const btn = el('button', { class: 'primary', type: 'submit', textContent: 'Import' });
-		const form = el('form', { class: 'signin' }, el('h1', { textContent: 'Import from text' }),
-			el('p', { class: 'hint', textContent: 'One account per line. The app signs in once per account with the password and a code made from the shared secret, to find the SteamID64, then creates the maFile and saves the password. It needs these four values and works with any account whose Steam Guard secrets you already have.' }),
+		const form = el('form', { class: 'signin' }, el('h1', { textContent: 'Import several accounts' }), intro, tabs,
+			el('p', { class: 'hint', textContent: 'One account per line: username, password, shared_secret, identity_secret. A password may contain the separator.' }),
 			area, el('p', { class: 'hint', textContent: 'Separator between the values:' }), sepRow, btn, out);
 		submitting(form, async () => {
 			btn.textContent = 'Importing… (about 2 seconds per account)';
 			const r = await api.importLines(area.value, sep);
 			btn.textContent = 'Import';
 			if (!r.ok) return toast(r.error, true);
-			out.replaceChildren(...r.value.map((x) => el('li', { class: x.ok ? 'ok' : 'bad' }, el('strong', { textContent: x.label }), el('span', { class: 'hint', textContent: x.message }))));
-			if (r.value.some((x) => x.ok)) { area.value = ''; void updateTodoCount(); }
+			showResults(r.value);
+			if (r.value.some((x) => x.ok)) area.value = '';
 		});
-		body.replaceChildren(form, el('button', { class: 'link', type: 'button', textContent: 'Back', onclick: drawCredentials }));
+		body.replaceChildren(form, back);
 		area.focus();
 	}
 

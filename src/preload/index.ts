@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('api', {
 	enrollState: () => call('enrollState'),
 	enrollReset: () => call('enrollReset'),
 	importLines: (text: string, separator: string) => call('importLines', text, separator),
+	importOne: (input: Record<string, string>) => call('importOne', input),
 	enrollBegin: (name: string, password: string, save: boolean) => call('enrollBegin', name, password, save),
 	enrollLoginCode: (code: string) => call('enrollLoginCode', code),
 	enrollAdd: () => call('enrollAdd'),
