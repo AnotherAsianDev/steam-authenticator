@@ -29,6 +29,9 @@ export class AvatarCache {
 	private failed = new Map<string, number>();
 	private queue: Promise<void> = Promise.resolve();
 	private pending = new Set<string>();
+	/** The list asks every second; the disk is only looked at every few minutes per account. */
+	private checkedAt = new Map<string, number>();
+	private onDisk = new Set<string>();
 
 	constructor(
 		private readonly dir: string,
@@ -50,12 +53,18 @@ export class AvatarCache {
 	}
 
 	has(steamId: string): boolean {
-		return existsSync(this.file(steamId));
+		if (this.onDisk.has(steamId)) return true;
+		const yes = existsSync(this.file(steamId));
+		if (yes) this.onDisk.add(steamId);
+		return yes;
 	}
 
 	/** Queue a download if the cached copy is missing or old. Returns immediately. */
 	ensure(steamId: string): void {
 		if (this.pending.has(steamId)) return;
+		const now = Date.now();
+		if (now - (this.checkedAt.get(steamId) ?? 0) < 300_000) return;
+		this.checkedAt.set(steamId, now);
 		const f = this.file(steamId);
 		try {
 			if (existsSync(f) && Date.now() - statSync(f).mtimeMs < MAX_AGE_MS) return;
@@ -81,6 +90,7 @@ export class AvatarCache {
 			if (!res.ok || buf.length === 0 || buf.length > MAX_BYTES) throw new Error('bad image');
 			mkdirSync(this.dir, { recursive: true });
 			writeFileSync(this.file(steamId), buf);
+			this.onDisk.add(steamId);
 			this.onUpdate();
 		} catch (err) {
 			log.info('avatar', `${steamId}: profile picture not loaded: ${err instanceof Error ? err.message : String(err)}`);

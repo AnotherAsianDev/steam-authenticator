@@ -15,7 +15,7 @@ A lean desktop Steam Guard authenticator for Windows. Plain maFiles next to the 
 </tr>
 <tr>
 <td width="50%"><img src="docs/screenshots/add.png" alt="Add account"><br><sub>Add an authenticator to an account that has none</sub></td>
-<td></td>
+<td width="50%"><img src="docs/screenshots/trash.png" alt="Trash"><br><sub>Removed accounts wait in the Trash and can be restored</sub></td>
 </tr>
 </table>
 
@@ -80,6 +80,14 @@ The launcher is built from `launcher/launcher.c` (a prebuilt `launcher/Launcher.
 ## To do and Export
 
 To do lists what is missing per account (saved password, revocation code, sign-in, unfinished activation) with the fix inline. Export builds a plain-text list: pick fields and their order, pick the separator (`: ; , . |`, tab, space or your own), see an example with made-up data, then copy or save as .txt.
+
+## Trash
+
+Removing an account moves its maFile (and its saved password) to `data/trash/` instead of deleting it. The Trash page in the sidebar lists them with Restore and Delete forever, plus Empty trash and Open folder. Restoring puts the account and its password back. A removed account is not re-imported on its own from SDA folders; Restore it, or import its file by hand.
+
+## Window
+
+The window draws its own title bar (minimize, maximize, close) in the app's colours, remembers its size and position (`data/window.json`), and only one copy runs per folder. Ctrl+F jumps to the filter box. Nothing refreshes while the window is minimized.
 
 ## Log
 

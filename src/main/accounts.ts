@@ -6,6 +6,7 @@ import { parseMaFile, type ParsedMaFile } from './mafile';
 import { SignInRequired, isUsableMobileToken, sessionCookie, tokenExpiry, type TokenStore } from './sessions';
 import type { MaFileStore } from './store';
 import type { StateCache } from './statecache';
+import type { Trash } from './trash';
 
 export interface Status {
 	/** `signin`: needs the password once. `error`: temporary problem, message says what. */
@@ -33,6 +34,8 @@ export interface AccountsDeps {
 	spacingMs?: number;
 	/** Remembers results and access tokens across restarts. */
 	cache?: StateCache;
+	/** Where removed accounts are kept. Without it, removing deletes. */
+	trash?: Trash;
 }
 
 export class Accounts {
@@ -87,7 +90,16 @@ export class Accounts {
 		this.d.cache?.dropAccess(steamId);
 	}
 
+	/** Move the account to the trash (when there is one). Nothing is deleted if the copy cannot be made. */
 	remove(steamId: string): void {
+		if (this.d.trash) {
+			try {
+				this.d.trash.put(steamId, this.d.store.read(steamId), this.d.credentials.get(steamId));
+			} catch (err) {
+				log.error('trash', `${this.parsed.get(steamId)?.accountName ?? steamId}: could not move to the trash`, err);
+				throw new UserError('Could not move the account to the trash. Nothing was removed');
+			}
+		}
 		this.d.cache?.drop(steamId);
 		this.d.store.remove(steamId);
 		this.d.tokens.delete(steamId);
@@ -96,6 +108,25 @@ export class Accounts {
 		this.dropAccess(steamId);
 		this.parsed.delete(steamId);
 		this.statuses.delete(steamId);
+	}
+
+	/** Bring a trashed account back, with its saved password. */
+	restore(entryId: string): string {
+		const trash = this.d.trash;
+		if (!trash) throw new UserError('There is no trash');
+		let entry;
+		try {
+			entry = trash.read(entryId);
+			parseMaFile(entry.maFile);
+		} catch {
+			throw new UserError('That entry cannot be read any more');
+		}
+		if (this.d.store.has(entry.steamId)) throw new UserError('This account is already in the app. Remove it first or delete this entry');
+		this.d.store.save(entry.steamId, entry.maFile);
+		if (entry.password) this.d.credentials.set(entry.steamId, entry.password);
+		trash.discard(entryId);
+		this.reload();
+		return entry.steamId;
 	}
 
 	private async accessToken(steamId: string, force = false): Promise<string> {

@@ -103,6 +103,17 @@ export class Logger {
 		return [...this.entries].reverse();
 	}
 
+	/** How many errors are newer than `since` (Unix seconds); cheap enough to ask after every change. */
+	errorsSince(since: number): number {
+		let n = 0;
+		for (let i = this.entries.length - 1; i >= 0; i--) {
+			const e = this.entries[i]!;
+			if (e.time <= since) break;
+			if (e.level === 'error') n++;
+		}
+		return n;
+	}
+
 	clear(): void {
 		this.entries = [];
 		try {

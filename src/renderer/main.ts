@@ -53,6 +53,13 @@ interface TodoItem {
 	name: string;
 	detail: string;
 }
+interface TrashEntry {
+	id: string;
+	steamId: string;
+	name: string;
+	removedAt: number;
+	hasPassword: boolean;
+}
 interface LogEntry {
 	time: number;
 	level: 'error' | 'warn' | 'info';
@@ -88,6 +95,7 @@ declare const api: {
 	logCopy(): P<void>;
 	logSave(): P<string | null>;
 	logClient(message: string): P<void>;
+	logErrors(since: number): P<number>;
 	onLogChanged(cb: () => void): void;
 	todo(): P<TodoItem[]>;
 	todoIgnore(id: string, kind: string): P<Settings>;
@@ -106,6 +114,16 @@ declare const api: {
 	enrollCancel(): P<EnrollState>;
 	enrollCopyRevocation(): P<void>;
 	remove(id: string): P<void>;
+	trashList(): P<TrashEntry[]>;
+	trashRestore(id: string): P<void>;
+	trashDelete(id: string): P<void>;
+	trashEmpty(): P<number>;
+	trashOpen(): P<string>;
+	winMinimize(): P<void>;
+	winMaximize(): P<void>;
+	winClose(): P<void>;
+	winState(): P<{ maximized: boolean }>;
+	onMaximized(cb: (maximized: boolean) => void): void;
 	reveal(): P<string>;
 	settings(): P<Settings>;
 	setSettings(patch: Partial<Settings>): P<Settings>;
@@ -116,7 +134,7 @@ declare const api: {
 const root = document.getElementById('app')!;
 let settings: Settings;
 let timer: number | undefined;
-let view: { name: 'list' } | { name: 'log' } | { name: 'todo' } | { name: 'export' } | { name: 'confirms' } | { name: 'add' } | { name: 'settings' } | { name: 'detail'; id: string } = { name: 'list' };
+let view: { name: 'list' } | { name: 'trash' } | { name: 'log' } | { name: 'todo' } | { name: 'export' } | { name: 'confirms' } | { name: 'add' } | { name: 'settings' } | { name: 'detail'; id: string } = { name: 'list' };
 let refreshView: () => void = () => undefined;
 const avatarImages = new Map<string, string>();
 
@@ -143,6 +161,7 @@ const ICONS: Record<string, string> = {
 	add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
 	settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>',
 	log: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+	trash: '<path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3"/>',
 	folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
 };
 const icon = (name: string): HTMLElement =>
@@ -150,6 +169,29 @@ const icon = (name: string): HTMLElement =>
 
 const content = el('div', { class: 'content' });
 const navButtons = new Map<string, HTMLButtonElement>();
+const WINDOW_GLYPHS = {
+	min: '<path d="M1 5.5h8"/>',
+	max: '<rect x="1.5" y="1.5" width="7" height="7"/>',
+	restore: '<path d="M3 3V1.5h5.5V7H7"/><rect x="1.5" y="3" width="5.5" height="5.5"/>',
+	close: '<path d="M1.5 1.5l7 7M8.5 1.5l-7 7"/>'
+};
+const glyph = (g: string): string => `<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">${g}</svg>`;
+
+/** The window's own title bar: a drag area with minimize, maximize and close. */
+function titleBar(): HTMLElement {
+	const control = (cls: string, label: string, g: string, run: () => Promise<unknown>): HTMLButtonElement =>
+		el('button', { class: `wc ${cls}`, type: 'button', title: label, ariaLabel: label, innerHTML: glyph(g), onclick: () => void run() });
+	const max = control('max', 'Maximize', WINDOW_GLYPHS.max, () => api.winMaximize());
+	const setMax = (maximized: boolean): void => {
+		max.innerHTML = glyph(maximized ? WINDOW_GLYPHS.restore : WINDOW_GLYPHS.max);
+		max.title = maximized ? 'Restore' : 'Maximize';
+		max.setAttribute('aria-label', max.title);
+	};
+	api.onMaximized(setMax);
+	void api.winState().then((r) => r.ok && setMax(r.value.maximized));
+	return el('div', { class: 'titlebar' }, control('min', 'Minimize', WINDOW_GLYPHS.min, () => api.winMinimize()), max, control('close', 'Close', WINDOW_GLYPHS.close, () => api.winClose()));
+}
+
 function buildShell(): void {
 	const item = (id: string, text: string, go: () => void, count = false): HTMLButtonElement => {
 		const b = el('button', { class: 'nav', type: 'button', title: text, onclick: go }, icon(id), el('span', { class: 'label', textContent: text }), ...(count ? [el('span', { class: 'count', textContent: '' })] : []));
@@ -173,11 +215,12 @@ function buildShell(): void {
 			'nav',
 			{ class: 'navlist bottom' },
 			item('folder', 'Storage folder', () => void api.reveal()),
+			item('trash', 'Trash', () => void navigate({ name: 'trash' })),
 			item('log', 'Log', () => void navigate({ name: 'log' }), true),
 			item('settings', 'Settings', () => void navigate({ name: 'settings' }))
 		)
 	);
-	root.replaceChildren(el('div', { class: 'shell' }, side, content));
+	root.replaceChildren(el('div', { class: 'shell' }, side, el('div', { class: 'pane' }, titleBar(), content)));
 }
 function setNav(): void {
 	const active = view.name === 'list' || view.name === 'detail' ? 'codes' : view.name;
@@ -185,9 +228,18 @@ function setNav(): void {
 	navButtons.get('folder')?.classList.remove('active');
 }
 
+/** Runs a screen's refresh on a timer, but not while the window is hidden or minimized. */
+function every(ms: number, fn: () => void): void {
+	timer = window.setInterval(() => {
+		if (!document.hidden) fn();
+	}, ms);
+}
+let onLogChange: () => void = () => undefined;
+
 function show(...nodes: Node[]): void {
 	window.clearInterval(timer);
 	timer = undefined;
+	onLogChange = () => undefined;
 	content.replaceChildren(...nodes);
 	content.scrollTop = 0;
 	setNav();
@@ -259,13 +311,9 @@ const setTabCount = (): void => {
 	if (c) c.textContent = pendingTotal ? String(pendingTotal) : '';
 };
 async function updateLogCount(): Promise<void> {
-	const r = await api.logList();
+	const r = await api.logErrors(Number(sessionStorageGet('logSeen') ?? 0));
 	const c = navButtons.get('log')?.querySelector('.count');
-	if (r.ok && c) {
-		const since = Number(sessionStorageGet('logSeen') ?? 0);
-		const n = r.value.filter((e) => e.level === 'error' && e.time > since).length;
-		c.textContent = n ? String(n) : '';
-	}
+	if (r.ok && c) c.textContent = r.value ? String(r.value) : '';
 }
 function sessionStorageGet(k: string): string | null {
 	try { return window.sessionStorage.getItem(k); } catch { return null; }
@@ -306,6 +354,7 @@ async function navigate(v: typeof view): Promise<void> {
 	else if (v.name === 'confirms') await confirmsScreen();
 	else if (v.name === 'todo') await todoScreen();
 	else if (v.name === 'log') await logScreen();
+	else if (v.name === 'trash') await trashScreen();
 	else if (v.name === 'export') await exportScreen();
 	else await detailScreen(v.id);
 }
@@ -397,7 +446,8 @@ async function listScreen(): Promise<void> {
 		await refresh();
 	}
 
-	async function refresh(): Promise<void> {
+	/** `full`: also the progress strip and the to-do count, which only change when something happened. */
+	async function refresh(full = true): Promise<void> {
 		const r = await api.accounts();
 		if (!r.ok) return toast(r.error, true);
 		empty.hidden = r.value.length > 0;
@@ -418,8 +468,10 @@ async function listScreen(): Promise<void> {
 		setTabCount();
 		filterBar.hidden = r.value.length === 0;
 		applyFilter();
-		await strip.update();
-		void updateTodoCount();
+		if (full) {
+			await strip.update();
+			void updateTodoCount();
+		}
 	}
 
 	function buildRow(row: Row): HTMLLIElement {
@@ -484,7 +536,7 @@ async function listScreen(): Promise<void> {
 
 	refreshView = () => void refresh();
 	await refresh();
-	timer = window.setInterval(() => void refresh(), 1000);
+	every(1000, () => void refresh(false));
 }
 
 // ----------------------------------------------------------- confirmations --
@@ -564,7 +616,7 @@ async function confirmsScreen(): Promise<void> {
 	}
 	refreshView = () => void load();
 	await load();
-	timer = window.setInterval(() => void load(), 2000);
+	every(30_000, () => void load());
 }
 
 // ------------------------------------------------------------------- todo --
@@ -691,7 +743,65 @@ async function logScreen(): Promise<void> {
 	drawChips();
 	refreshView = () => undefined;
 	await load();
-	timer = window.setInterval(() => void load(), 3000);
+	onLogChange = () => {
+		sessionStorageSet('logSeen', String(Math.floor(Date.now() / 1000)));
+		void load();
+	};
+}
+
+// ------------------------------------------------------------------ trash --
+
+async function trashScreen(): Promise<void> {
+	const body = el('main', {});
+	const actions = el('div', { class: 'actions' });
+	show(el('header', {}, el('h1', { class: 'title', textContent: 'Trash' }), actions), body);
+
+	async function load(): Promise<void> {
+		const r = await api.trashList();
+		if (!r.ok) return toast(r.error, true);
+		const items = r.value;
+		actions.replaceChildren(
+			el('button', { class: 'small', type: 'button', textContent: 'Open folder', onclick: () => void api.trashOpen() }),
+			...(items.length
+				? [confirmButton('Empty trash', 'Click again to delete all', 'small danger', async () => {
+						const res = await api.trashEmpty();
+						toast(res.ok ? `${res.value} deleted for good` : res.error, !res.ok);
+						await load();
+					})]
+				: [])
+		);
+		const note = el('p', { class: 'hint', textContent: 'Removed accounts are kept here with their saved password until you delete them from this page. They are not imported again from SDA folders on their own.' });
+		if (items.length === 0) {
+			body.replaceChildren(note, el('div', { class: 'center empty-state' }, el('h1', { textContent: 'Trash is empty' }), el('p', { class: 'hint', textContent: 'When you remove an account it waits here, so it can always be restored.' })));
+			return;
+		}
+		const rows = items.map((it) =>
+			el(
+				'li',
+				{ class: 'trash-row' },
+				el('span', { class: 'who' }, el('span', { class: 'name', textContent: it.name }), el('span', { class: 'sid shown', textContent: `Removed ${ago(it.removedAt)}${it.hasPassword ? ' · saved password included' : ''}` })),
+				el(
+					'span',
+					{ class: 'row-actions' },
+					el('button', { class: 'small primary', type: 'button', textContent: 'Restore', onclick: async (e: Event) => {
+						const b = e.currentTarget as HTMLButtonElement;
+						b.disabled = true;
+						const res = await api.trashRestore(it.id);
+						toast(res.ok ? `${it.name} restored` : res.error, !res.ok);
+						await load();
+					} }),
+					confirmButton('Delete forever', 'Click again to delete', 'small danger', async () => {
+						const res = await api.trashDelete(it.id);
+						toast(res.ok ? 'Deleted for good' : res.error, !res.ok);
+						await load();
+					})
+				)
+			)
+		);
+		body.replaceChildren(note, el('ul', { class: 'trash-list' }, ...rows));
+	}
+	refreshView = () => undefined;
+	await load();
 }
 
 // ----------------------------------------------------------------- export --
@@ -1094,7 +1204,7 @@ async function detailScreen(id: string): Promise<void> {
 	const removeBtn = confirmButton('Remove account…', 'Click again to remove', 'danger-link', async () => {
 		const r = await api.remove(id);
 		if (!r.ok) return toast(r.error, true);
-		toast('Removed from this app. Your original maFile is untouched');
+		toast('Moved to the trash. You can restore it from Trash');
 		goList();
 	});
 
@@ -1285,7 +1395,7 @@ async function detailScreen(id: string): Promise<void> {
 	if (first.ok) {
 		render(first.value, true);
 	}
-	timer = window.setInterval(() => void refreshView(), 3000);
+	every(15_000, () => void refreshView());
 }
 
 // --------------------------------------------------------------- settings --
@@ -1356,7 +1466,23 @@ async function boot(): Promise<void> {
 	if (s.ok) applySettings(s.value);
 	else applySettings({ theme: 'system', density: 'comfortable', showSteamId: false, showAvatars: true, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false });
 	api.onChanged(() => refreshView());
-	api.onLogChanged(() => void updateLogCount());
+	api.onLogChanged(() => {
+		void updateLogCount();
+		onLogChange();
+	});
+	document.addEventListener('visibilitychange', () => {
+		if (!document.hidden) refreshView();
+	});
+	document.addEventListener('keydown', (e) => {
+		if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+			const box = document.querySelector<HTMLInputElement>('.search');
+			if (box) {
+				e.preventDefault();
+				box.focus();
+				box.select();
+			}
+		}
+	});
 	window.addEventListener('error', (e) => void api.logClient(`${e.message} (${e.filename}:${e.lineno})`));
 	window.addEventListener('unhandledrejection', (e) => void api.logClient(`Unhandled: ${String((e.reason as Error)?.message ?? e.reason)}`));
 	api.onNotice((n) => {

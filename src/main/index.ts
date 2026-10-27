@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, screen, shell } from 'electron';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { Accounts } from './accounts';
@@ -19,14 +19,21 @@ import { openSteamWindow, TARGETS } from './browser';
 import { StateCache } from './statecache';
 import { Enrollment, httpPost, steamLogin } from './enroll';
 import { MaFileStore } from './store';
+import { Trash } from './trash';
+import { fitWindowState, loadWindowState, saveWindowState } from './windowstate';
 import { generateCode, secondsRemaining } from './totp';
 
 const legacyData = app.getPath('userData');
 const layout = resolveLayout(app.isPackaged, process.execPath, legacyData);
 if (layout.portable) app.setPath('userData', layout.chromium);
+// One copy per folder: two copies on the same files would overwrite each other.
+const firstInstance = app.requestSingleInstanceLock();
+if (!firstInstance) app.exit(0);
+const clockReady = syncClock();
 const migrated = migrateLegacy(legacyData, layout);
 const data = layout.data;
 const store = new MaFileStore(layout.maFiles);
+const trash = new Trash(join(data, 'trash'));
 log.init(join(data, 'log.jsonl'), () => secretValues(), () => win?.webContents.send('logChanged'));
 process.on('uncaughtException', (err) => log.error('app', 'Unexpected error', err));
 process.on('unhandledRejection', (err) => log.error('app', 'Unhandled error', err));
@@ -50,6 +57,7 @@ const avatars = new AvatarCache(join(data, 'avatars'), () => win?.webContents.se
 const accounts = new Accounts({
 	cache: new StateCache(join(data, 'cache.json')),
 	store,
+	trash,
 	tokens,
 	credentials,
 	client: new ConfirmationsClient(fetchTransport, steamNow),
@@ -128,7 +136,8 @@ function autoImport(): { added: string[]; folders: number } {
 	const detected = s.autoDetect ? findMaFileFolders([join(home, 'Downloads'), join(home, 'Desktop'), join(home, 'Documents')]) : [];
 	const folders = [...new Set([...detected, ...s.importFolders])];
 	const added: string[] = [];
-	for (const f of folders) added.push(...importFolder(f, store).added);
+	const removed = trash.steamIds();
+	for (const f of folders) added.push(...importFolder(f, store, removed).added);
 	if (added.length) accounts.reload();
 	watchFolders(folders);
 	return { added, folders: folders.length };
@@ -162,7 +171,7 @@ function processStoreFolder(retryFailures: boolean): void {
 
 /** New files appeared in a folder the user watches (for example SDA's). */
 function processExternalFolder(dir: string): void {
-	const r = importFolder(dir, store);
+	const r = importFolder(dir, store, trash.steamIds());
 	if (r.added.length) {
 		accounts.reload();
 		win?.webContents.send('changed');
@@ -171,7 +180,9 @@ function processExternalFolder(dir: string): void {
 }
 
 function registerIpc(): void {
-	handle('accounts', () => {
+	handle('accounts', async () => {
+		// Right after start the clock may not be corrected yet; a wrong code for a second is worse than a short wait.
+		await Promise.race([clockReady, new Promise((r) => setTimeout(r, 1500))]);
 		const t = steamNow();
 		const showAvatars = settings.get().showAvatars;
 		return accounts.ids().map((steamId) => {
@@ -359,6 +370,7 @@ function registerIpc(): void {
 	});
 	handle('version', () => app.getVersion());
 	handle('logList', () => log.list());
+	handle('logErrors', (since: unknown) => log.errorsSince(typeof since === 'number' ? since : 0));
 	handle('logClear', () => log.clear());
 	handle('logCopy', () => copyText(log.text()));
 	handle('logClient', (message: unknown) => {
@@ -399,7 +411,32 @@ function registerIpc(): void {
 		copyText(code);
 	});
 
-	handle('remove', (steamId: unknown) => accounts.remove(known(steamId)));
+	handle('remove', (steamId: unknown) => {
+		accounts.remove(known(steamId));
+		win?.webContents.send('changed');
+	});
+	const trashId = (v: unknown): string => {
+		const id = str(v, 'entry');
+		if (!/^\d{17}\.\d{10,14}$/.test(id)) throw new UserError('Invalid entry');
+		return id;
+	};
+	handle('trashList', () => trash.list());
+	handle('trashRestore', (id: unknown) => {
+		const steamId = accounts.restore(trashId(id));
+		win?.webContents.send('changed');
+		void accounts.refresh(steamId);
+	});
+	handle('trashDelete', (id: unknown) => trash.discard(trashId(id)));
+	handle('trashEmpty', () => trash.empty());
+	handle('trashOpen', () => {
+		mkdirSync(trash.dir, { recursive: true });
+		return shell.openPath(trash.dir);
+	});
+
+	handle('winMinimize', () => win?.minimize());
+	handle('winMaximize', () => (win?.isMaximized() ? win.unmaximize() : win?.maximize()));
+	handle('winClose', () => win?.close());
+	handle('winState', () => ({ maximized: win?.isMaximized() ?? false }));
 	handle('reveal', () => {
 		mkdirSync(store.dir, { recursive: true });
 		return shell.openPath(store.dir);
@@ -424,15 +461,22 @@ function schedulePolling(): void {
 	}
 }
 
+const WINDOW_MIN = { width: 640, height: 520 };
+const windowFile = join(data, 'window.json');
+
 function createWindow(): void {
+	const state = fitWindowState(loadWindowState(windowFile), screen.getAllDisplays().map((d) => d.workArea), WINDOW_MIN);
 	win = new BrowserWindow({
-		width: 1040,
-		height: 760,
-		minWidth: 640,
-		minHeight: 520,
+		width: state.width,
+		height: state.height,
+		...(state.x !== undefined && state.y !== undefined ? { x: state.x, y: state.y } : {}),
+		minWidth: WINDOW_MIN.width,
+		minHeight: WINDOW_MIN.height,
 		title: 'Authenticator',
+		// The window draws its own title bar (see the renderer).
+		frame: false,
+		show: false,
 		backgroundColor: '#0d0e11',
-		autoHideMenuBar: true,
 		webPreferences: {
 			preload: join(__dirname, 'preload.js'),
 			sandbox: true,
@@ -440,18 +484,51 @@ function createWindow(): void {
 			nodeIntegration: false
 		}
 	});
-	win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-	win.webContents.on('will-navigate', (e) => e.preventDefault());
-	void win.loadFile(join(__dirname, 'index.html'));
+	const w = win;
+	if (state.maximized) w.maximize();
+	// Shown once drawn, so there is no white flash.
+	w.once('ready-to-show', () => w.show());
+	w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+	w.webContents.on('will-navigate', (e) => e.preventDefault());
+
+	const remember = (): void => {
+		if (w.isDestroyed() || w.isMinimized()) return;
+		const b = w.getNormalBounds();
+		saveWindowState(windowFile, { x: b.x, y: b.y, width: b.width, height: b.height, maximized: w.isMaximized() });
+	};
+	let saveTimer: NodeJS.Timeout | undefined;
+	const later = (): void => {
+		clearTimeout(saveTimer);
+		saveTimer = setTimeout(remember, 600);
+		saveTimer.unref();
+	};
+	w.on('resize', later);
+	w.on('move', later);
+	w.on('close', remember);
+	const tell = (): void => w.webContents.send('maximized', w.isMaximized());
+	w.on('maximize', tell);
+	w.on('unmaximize', tell);
+	w.on('closed', () => {
+		if (win === w) win = null;
+	});
+	void w.loadFile(join(__dirname, 'index.html'));
 }
 
+app.on('second-instance', () => {
+	if (!win) return;
+	if (win.isMinimized()) win.restore();
+	win.focus();
+});
+
 app.whenReady().then(async () => {
+	if (!firstInstance) return;
+	// No menu bar: the window has its own title bar, and Alt must not pop up a stray one.
+	Menu.setApplicationMenu(null);
 	registerIpc();
 	mkdirSync(store.dir, { recursive: true });
 	createWindow();
 	log.info('app', `Started version ${app.getVersion()}, ${accounts.ids().length} account(s), ${layout.portable ? 'portable' : 'user data'} folder`);
 	if (migrated.length) win?.webContents.once('did-finish-load', () => notice('Your earlier data was copied next to the program (maFiles and data folders)'));
-	await syncClock();
 	// Pick up anything dropped into the folder while the app was closed, then watch it.
 	const dropped = normalizeStoreFolder(store);
 	if (dropped.added.length) accounts.reload();
@@ -459,7 +536,11 @@ app.whenReady().then(async () => {
 	const names = [...dropped.added, ...imported.added];
 	if (names.length) win?.webContents.once('did-finish-load', () => notice(`Imported ${names.join(', ')}`));
 	schedulePolling();
-	if (settings.get().checkOnStartup) void accounts.refreshAll(600);
+	if (settings.get().checkOnStartup) {
+		// Confirmation requests are signed with the time, so the clock comes first.
+		await clockReady;
+		void accounts.refreshAll(600);
+	}
 	app.on('activate', () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();
 	});

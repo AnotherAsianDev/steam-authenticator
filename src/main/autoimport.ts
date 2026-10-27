@@ -39,9 +39,10 @@ export interface FolderImport {
 
 /**
  * Copy new accounts from a folder. Accounts already stored are left alone, so
- * an automatic pass can never overwrite newer data with an older file.
+ * an automatic pass can never overwrite newer data with an older file. `skip`
+ * holds SteamIDs that must not come back on their own (the trash).
  */
-export function importFolder(dir: string, store: MaFileStore): FolderImport {
+export function importFolder(dir: string, store: MaFileStore, skip: ReadonlySet<string> = new Set()): FolderImport {
 	const result: FolderImport = { added: [], skipped: 0, failed: [] };
 	let files: string[];
 	try {
@@ -54,7 +55,8 @@ export function importFolder(dir: string, store: MaFileStore): FolderImport {
 			const path = join(dir, file);
 			if (statSync(path).size > 1_000_000) throw new MaFileError('File is too large');
 			const m = parseMaFile(readFileSync(path, 'utf8'));
-			if (store.has(m.steamId)) {
+			// Accounts the user removed stay removed, even though the original file is still there.
+			if (store.has(m.steamId) || skip.has(m.steamId)) {
 				result.skipped++;
 				continue;
 			}

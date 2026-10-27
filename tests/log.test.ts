@@ -54,4 +54,12 @@ describe('log', () => {
 		second.init(file, () => []);
 		expect(second.list().map((x) => x.message)).toContain('first run problem');
 	});
+
+	it('counts only newer errors', () => {
+		const l = new Logger();
+		l.error('a', 'one');
+		l.warn('a', 'two');
+		expect(l.errorsSince(0)).toBe(1);
+		expect(l.errorsSince(Math.floor(Date.now() / 1000) + 5)).toBe(0);
+	});
 });
