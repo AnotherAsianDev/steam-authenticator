@@ -14,5 +14,5 @@
   <path d="M256 82 400 134v118c0 88-60 140-144 176C172 392 112 340 112 252V134z" fill="url(#sh)" stroke="#9db2ff" stroke-width="10" stroke-linejoin="round"/>
   <!-- the code -->
   <rect x="142" y="196" width="228" height="86" rx="20" fill="#0d0e11" fill-opacity=".38"/>
-  <text x="256" y="259" text-anchor="middle" font-family="Consolas, 'DejaVu Sans Mono', monospace" font-weight="700" font-size="64" fill="#fff" textLength="196" lengthAdjust="spacing">7K4QX</text>
+  <text x="256" y="259" text-anchor="middle" font-family="Consolas, 'DejaVu Sans Mono', monospace" font-weight="700" font-size="64" fill="#fff" textLength="196" lengthAdjust="spacing">GUARD</text>
 </svg>
