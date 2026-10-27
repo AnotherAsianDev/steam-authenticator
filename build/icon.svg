@@ -11,12 +11,13 @@
   </defs>
   <rect x="24" y="24" width="464" height="464" rx="118" fill="url(#bg)"/>
   <rect x="25.5" y="25.5" width="461" height="461" rx="116.500" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="3"/>
-  <!-- shield -->
   <path d="M256 82 400 134v118c0 88-60 140-144 176C172 392 112 340 112 252V134z" fill="url(#sh)" stroke="#9db2ff" stroke-width="10" stroke-linejoin="round"/>
-  <!-- three rising steam wisps -->
-  <g fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round">
-    <path d="M200 372c-26-28 26-48 0-78s26-48 0-76"/>
-    <path d="M256 388c-26-28 26-48 0-78s26-48 0-76s26-48 0-72"/>
-    <path d="M312 372c-26-28 26-48 0-78s26-48 0-76"/>
+  <!-- game controller -->
+  <g transform="translate(256 244) scale(.6) translate(-256 -280)">
+    <path fill="#fff" d="M168 196h176c44 0 68 34 78 92l10 62c4 26-12 42-34 42-16 0-28-9-40-26l-16-24H170l-16 24c-12 17-24 26-40 26-22 0-38-16-34-42l10-62c10-58 34-92 78-92z"/>
+    <g fill="#5f74ec">
+      <path d="M170 250h16v-16h16v16h16v16h-16v16h-16v-16h-16z"/>
+      <circle cx="332" cy="238" r="12"/><circle cx="362" cy="268" r="12"/>
+    </g>
   </g>
 </svg>

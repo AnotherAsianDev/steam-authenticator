@@ -363,3 +363,7 @@ header .actions { gap: 8px; align-items: center; }
 ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--muted) 70%, transparent); background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:active { background: var(--accent); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
+
+.about { display: flex; align-items: center; gap: 14px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.about p { margin: 2px 0 0; }
+button.small { white-space: nowrap; }
