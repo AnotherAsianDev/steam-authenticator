@@ -188,9 +188,9 @@ const icon = (name: string): HTMLElement =>
 
 /** The app logo (same drawing as build/icon.svg). Gradient ids are unique per instance. */
 let logoCount = 0;
-const logo = (size: number): HTMLElement => {
+const logo = (size: number, bare = false): HTMLElement => {
 	const g = `lg${++logoCount}`;
-	return el('span', { class: 'logo', innerHTML: `<svg viewBox="0 0 512 512" width="${size}" height="${size}" aria-hidden="true"><defs><linearGradient id="${g}b" x1=".1" y1="0" x2=".9" y2="1"><stop offset="0" stop-color="#232838"/><stop offset="1" stop-color="#0d0e11"/></linearGradient><linearGradient id="${g}s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9db2ff"/><stop offset="1" stop-color="#5468e6"/></linearGradient></defs><rect x="24" y="24" width="464" height="464" rx="118" fill="url(#${g}b)"/><rect x="25.5" y="25.5" width="461" height="461" rx="116.5" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="3"/><path d="M256 82 400 134v118c0 88-60 140-144 176C172 392 112 340 112 252V134z" fill="url(#${g}s)" stroke="#9db2ff" stroke-width="10" stroke-linejoin="round"/><rect x="142" y="196" width="228" height="86" rx="20" fill="#0d0e11" fill-opacity=".38"/><text x="256" y="259" text-anchor="middle" font-family="Consolas, 'DejaVu Sans Mono', monospace" font-weight="700" font-size="64" fill="#fff" textLength="196" lengthAdjust="spacing">GUARD</text></svg>` });
+	return el('span', { class: 'logo', innerHTML: `<svg viewBox="${bare ? '100 70 312 372' : '0 0 512 512'}" width="${bare ? Math.round((size * 312) / 372) : size}" height="${size}" aria-hidden="true"><defs><linearGradient id="${g}b" x1=".1" y1="0" x2=".9" y2="1"><stop offset="0" stop-color="#232838"/><stop offset="1" stop-color="#0d0e11"/></linearGradient><linearGradient id="${g}s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9db2ff"/><stop offset="1" stop-color="#5468e6"/></linearGradient></defs>${bare ? '' : `<rect x="24" y="24" width="464" height="464" rx="118" fill="url(#${g}b)"/><rect x="25.5" y="25.5" width="461" height="461" rx="116.5" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="3"/>`}<path d="M256 82 400 134v118c0 88-60 140-144 176C172 392 112 340 112 252V134z" fill="url(#${g}s)" stroke="#9db2ff" stroke-width="10" stroke-linejoin="round"/><rect x="142" y="196" width="228" height="86" rx="20" fill="#0d0e11" fill-opacity=".38"/><text x="256" y="259" text-anchor="middle" font-family="Consolas, 'DejaVu Sans Mono', monospace" font-weight="700" font-size="64" fill="#fff" textLength="196" lengthAdjust="spacing">GUARD</text></svg>` });
 };
 
 const content = el('div', { class: 'content' });
@@ -230,7 +230,7 @@ function buildShell(): void {
 	const side = el(
 		'aside',
 		{ class: 'sidebar' },
-		el('div', { class: 'brand' }, logo(30), el('span', { class: 'label', textContent: 'Authenticator' })),
+		el('div', { class: 'brand' }, logo(40, true), el('span', { class: 'label', textContent: 'Authenticator' })),
 		el(
 			'nav',
 			{ class: 'navlist' },
@@ -358,10 +358,11 @@ function sessionStorageGet(k: string): string | null {
 function sessionStorageSet(k: string, v: string): void {
 	try { window.sessionStorage.setItem(k, v); } catch { /* not available */ }
 }
-async function updateTodoCount(): Promise<void> {
+async function updateTodoCount(): Promise<TodoItem[] | undefined> {
 	const r = await api.todo();
 	const c = navButtons.get('todo')?.querySelector('.count');
 	if (r.ok && c) c.textContent = r.value.length ? String(r.value.length) : '';
+	return r.ok ? r.value : undefined;
 }
 
 /** "Checking 2 of 5" strip, shown only while a round of checks is running. */
@@ -590,7 +591,20 @@ async function listScreen(): Promise<void> {
 	}
 	search.addEventListener('input', () => { query = search.value; applyFilter(); });
 	const filterBar = el('div', { class: 'filterbar' }, search, chipRow);
-	show(header, strip.node, el('main', {}, filterBar, list, none, empty));
+	const overview = el('section', { class: 'overview', hidden: true });
+	/** Account count and what is still missing, from the same list as the To do tab (ignored items are not counted). */
+	function drawOverview(total: number, todo: TodoItem[] | undefined): void {
+		overview.hidden = total === 0 || !todo;
+		if (!todo) return;
+		const count = (k: TodoItem['kind']): number => todo.filter((t) => t.kind === k).length;
+		const defs: [TodoItem['kind'], string][] = [['signin', 'need sign-in'], ['password', 'without password'], ['revocation', 'without revocation code'], ['activation', 'not activated']];
+		const chips = defs.filter(([k]) => count(k) > 0).map(([k, text]) => el('button', { class: 'ov-chip warn', type: 'button', title: 'Open the To do list', textContent: `${count(k)} ${text}`, onclick: () => void navigate({ name: 'todo' }) }));
+		overview.replaceChildren(
+			el('div', { class: 'ov-total' }, el('strong', { textContent: String(total) }), el('span', { textContent: total === 1 ? 'account' : 'accounts' })),
+			el('div', { class: 'ov-chips' }, ...(chips.length ? chips : [el('span', { class: 'ov-chip good', textContent: 'Everything is complete' })]))
+		);
+	}
+	show(header, strip.node, el('main', {}, overview, filterBar, list, none, empty));
 
 	async function doImport(): Promise<void> {
 		const r = await api.import();
@@ -625,7 +639,7 @@ async function listScreen(): Promise<void> {
 		applyFilter();
 		if (full) {
 			await strip.update();
-			void updateTodoCount();
+			drawOverview(r.value.length, await updateTodoCount());
 		}
 	}
 
