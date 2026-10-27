@@ -1,0 +1,1251 @@
+interface Row {
+	steamId: string;
+	name: string;
+	code: string;
+	remaining: number;
+	hasAvatar: boolean;
+	state: 'idle' | 'loading' | 'ok' | 'signin' | 'error';
+	pending: number | null;
+}
+interface Item {
+	id: string;
+	type: number;
+	typeName: string;
+	headline: string;
+	summary: string[];
+	created?: number;
+	critical: boolean;
+}
+interface Status {
+	state: Row['state'];
+	message?: string;
+	unreadable: number;
+	fetchedAt: number;
+	items: Item[];
+}
+interface Settings {
+	theme: 'system' | 'dark' | 'light';
+	density: 'comfortable' | 'compact';
+	showSteamId: boolean;
+	showAvatars: boolean;
+	autoCheckSeconds: number;
+	checkOnStartup: boolean;
+	clipboardClearSeconds: number;
+	autoDetect: boolean;
+	importFolders: string[];
+	todoIgnored: string[];
+	exportFields: string[];
+	exportDelimiter: string;
+	exportSkipIncomplete: boolean;
+}
+interface EnrollState {
+	step: 'credentials' | 'loginCode' | 'confirm' | 'activate' | 'done';
+	accountName?: string;
+	steamId?: string;
+	detail?: string;
+	phoneHint?: string;
+	revocationCode?: string;
+	resumed?: boolean;
+}
+interface TodoItem {
+	kind: 'signin' | 'password' | 'revocation' | 'activation';
+	steamId: string;
+	name: string;
+	detail: string;
+}
+type Result<T> = { ok: true; value: T } | { ok: false; error: string };
+type P<T> = Promise<Result<T>>;
+declare const api: {
+	accounts(): P<Row[]>;
+	avatar(id: string): P<string | null>;
+	copyCode(id: string): P<void>;
+	copyField(id: string, field: string): P<void>;
+	detail(id: string): P<{ steamId: string; name: string; hasRevocation: boolean; hasPassword: boolean }>;
+	confirmations(id: string): P<Status>;
+	refresh(id: string): P<Status>;
+	act(id: string, action: 'accept' | 'deny', ids: string[]): P<Status>;
+	signIn(id: string, password: string, save: boolean): P<Status>;
+	setPassword(id: string, password: string): P<void>;
+	clearPassword(id: string): P<void>;
+	import(): P<{ file: string; ok: boolean; message: string }[]>;
+	rescan(): P<{ added: string[]; folders: number }>;
+	addFolder(): P<Settings>;
+	openProfile(id: string): P<void>;
+	refreshAll(): P<void>;
+	progress(): P<{ running: boolean; done: number; total: number }>;
+	openSteam(id: string, target: string): P<void>;
+	todo(): P<TodoItem[]>;
+	todoIgnore(id: string, kind: string): P<Settings>;
+	setRevocation(id: string, code: string): P<void>;
+	exportInfo(): P<{ steamId: string; name: string; hasPassword: boolean; hasRevocation: boolean }[]>;
+	exportCheck(ids: string[], fields: string[], d: string, skip: boolean): P<{ count: number; skipped: number; conflicts: number }>;
+	exportCopy(ids: string[], fields: string[], d: string, skip: boolean): P<number>;
+	exportSave(ids: string[], fields: string[], d: string, skip: boolean): P<{ count: number; path: string } | null>;
+	allConfirmations(): P<(Status & { steamId: string; name: string })[]>;
+	enrollState(): P<EnrollState>;
+	enrollReset(): P<EnrollState>;
+	enrollBegin(name: string, password: string, save: boolean): P<EnrollState>;
+	enrollLoginCode(code: string): P<EnrollState>;
+	enrollAdd(): P<EnrollState>;
+	enrollActivate(code: string): P<EnrollState>;
+	enrollCancel(): P<EnrollState>;
+	enrollCopyRevocation(): P<void>;
+	remove(id: string): P<void>;
+	reveal(): P<string>;
+	settings(): P<Settings>;
+	setSettings(patch: Partial<Settings>): P<Settings>;
+	onChanged(cb: () => void): void;
+	onNotice(cb: (n: { message: string; error: boolean }) => void): void;
+};
+
+const root = document.getElementById('app')!;
+let settings: Settings;
+let timer: number | undefined;
+let view: { name: 'list' } | { name: 'todo' } | { name: 'export' } | { name: 'confirms' } | { name: 'add' } | { name: 'settings' } | { name: 'detail'; id: string } = { name: 'list' };
+let refreshView: () => void = () => undefined;
+const avatarImages = new Map<string, string>();
+
+// ---------------------------------------------------------------- helpers --
+
+function el<K extends keyof HTMLElementTagNameMap>(
+	tag: K,
+	props: Partial<HTMLElementTagNameMap[K]> & { class?: string } = {},
+	...children: (Node | string)[]
+): HTMLElementTagNameMap[K] {
+	const node = document.createElement(tag);
+	const { class: cls, ...rest } = props;
+	if (cls) node.className = cls;
+	Object.assign(node, rest);
+	node.append(...children);
+	return node;
+}
+
+const ICONS: Record<string, string> = {
+	codes: '<path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m9 12 2 2 4-4"/>',
+	confirms: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="m8.5 9 1.5 1.5L13 7.5M8.5 16l1.5 1.5L13 14.5M15.5 9.5h2M15.5 16.5h2"/>',
+	todo: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.2 1.2L6.8 5M3.5 12l1.2 1.2L6.8 11M3.5 18l1.2 1.2L6.8 17"/>',
+	export: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>',
+	add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
+	settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+	folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
+};
+const icon = (name: string): HTMLElement =>
+	el('span', { class: 'ico', innerHTML: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>` });
+
+const content = el('div', { class: 'content' });
+const navButtons = new Map<string, HTMLButtonElement>();
+function buildShell(): void {
+	const item = (id: string, text: string, go: () => void, count = false): HTMLButtonElement => {
+		const b = el('button', { class: 'nav', type: 'button', title: text, onclick: go }, icon(id), el('span', { class: 'label', textContent: text }), ...(count ? [el('span', { class: 'count', textContent: '' })] : []));
+		navButtons.set(id, b);
+		return b;
+	};
+	const side = el(
+		'aside',
+		{ class: 'sidebar' },
+		el('div', { class: 'brand' }, icon('codes'), el('span', { class: 'label', textContent: 'Authenticator' })),
+		el(
+			'nav',
+			{ class: 'navlist' },
+			item('codes', 'Codes', () => void navigate({ name: 'list' })),
+			item('confirms', 'Confirmations', () => void navigate({ name: 'confirms' }), true),
+			item('todo', 'To do', () => void navigate({ name: 'todo' }), true),
+			item('add', 'Add account', () => void navigate({ name: 'add' })),
+			item('export', 'Export', () => void navigate({ name: 'export' }))
+		),
+		el(
+			'nav',
+			{ class: 'navlist bottom' },
+			item('folder', 'Storage folder', () => void api.reveal()),
+			item('settings', 'Settings', () => void navigate({ name: 'settings' }))
+		)
+	);
+	root.replaceChildren(el('div', { class: 'shell' }, side, content));
+}
+function setNav(): void {
+	const active = view.name === 'list' || view.name === 'detail' ? 'codes' : view.name;
+	navButtons.forEach((b, id) => b.classList.toggle('active', id === active));
+	navButtons.get('folder')?.classList.remove('active');
+}
+
+function show(...nodes: Node[]): void {
+	window.clearInterval(timer);
+	timer = undefined;
+	content.replaceChildren(...nodes);
+	content.scrollTop = 0;
+	setNav();
+}
+
+let toastTimer: number | undefined;
+function toast(message: string, error = false): void {
+	document.querySelector('.toast')?.remove();
+	const t = el('div', { class: error ? 'toast error' : 'toast', textContent: message, role: 'status' });
+	document.body.append(t);
+	window.clearTimeout(toastTimer);
+	toastTimer = window.setTimeout(() => t.remove(), 3000);
+}
+
+function applySettings(s: Settings): void {
+	settings = s;
+	if (s.theme === 'system') delete document.documentElement.dataset['theme'];
+	else document.documentElement.dataset['theme'] = s.theme;
+	document.body.classList.toggle('compact', s.density === 'compact');
+}
+
+function ago(unix?: number): string {
+	if (!unix) return '';
+	const s = Math.max(0, Math.floor(Date.now() / 1000) - unix);
+	if (s < 90) return 'just now';
+	if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+	if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+	return `${Math.floor(s / 86400)} d ago`;
+}
+
+async function loadAvatar(id: string, into: HTMLElement): Promise<void> {
+	let url = avatarImages.get(id);
+	if (!url) {
+		const r = await api.avatar(id);
+		if (r.ok && r.value) {
+			url = r.value;
+			avatarImages.set(id, url);
+		}
+	}
+	if (url) into.replaceChildren(el('img', { src: url, alt: '' }));
+}
+
+function avatarBox(name: string, id: string, hasAvatar: boolean, size: 'sm' | 'lg'): HTMLElement {
+	const box = el('span', { class: `avatar ${size}`, textContent: name.slice(0, 1).toUpperCase() });
+	if (hasAvatar && settings.showAvatars) void loadAvatar(id, box);
+	return box;
+}
+
+function profileLink(id: string, name: string, cls: string): HTMLButtonElement {
+	return el('button', {
+		class: `${cls} profile-link`,
+		type: 'button',
+		title: 'Open Steam profile',
+		textContent: name,
+		onclick: async (e: Event) => {
+			e.stopPropagation();
+			const r = await api.openProfile(id);
+			if (!r.ok) toast(r.error, true);
+		}
+	});
+}
+
+let query = '';
+let listFilter: 'all' | 'pending' | 'signin' = 'all';
+let confirmType = 'all';
+let pendingTotal = 0;
+const setTabCount = (): void => {
+	const c = navButtons.get('confirms')?.querySelector('.count');
+	if (c) c.textContent = pendingTotal ? String(pendingTotal) : '';
+};
+async function updateTodoCount(): Promise<void> {
+	const r = await api.todo();
+	const c = navButtons.get('todo')?.querySelector('.count');
+	if (r.ok && c) c.textContent = r.value.length ? String(r.value.length) : '';
+}
+
+/** "Checking 2 of 5" strip, shown only while a round of checks is running. */
+function progressStrip(): { node: HTMLElement; update: () => Promise<void> } {
+	const label = el('span', { textContent: '' });
+	const fill = el('i');
+	const node = el('div', { class: 'progress', hidden: true, role: 'status' }, label, el('span', { class: 'track' }, fill));
+	return {
+		node,
+		update: async () => {
+			const r = await api.progress();
+			if (!r.ok) return;
+			const { running, done, total } = r.value;
+			node.hidden = !running;
+			label.textContent = `Checking confirmations ${Math.min(done + 1, total)} of ${total}`;
+			fill.style.width = `${total ? (done / total) * 100 : 0}%`;
+		}
+	};
+}
+
+const goList = (): void => void navigate({ name: 'list' });
+async function navigate(v: typeof view): Promise<void> {
+	view = v;
+	if (v.name === 'list') await listScreen();
+	else if (v.name === 'settings') await settingsScreen();
+	else if (v.name === 'add') await addScreen();
+	else if (v.name === 'confirms') await confirmsScreen();
+	else if (v.name === 'todo') await todoScreen();
+	else if (v.name === 'export') await exportScreen();
+	else await detailScreen(v.id);
+}
+
+/** A button that must be pressed twice within a few seconds. */
+function confirmButton(label: string, confirmLabel: string, cls: string, run: () => void): HTMLButtonElement {
+	let armed: number | undefined;
+	const b = el('button', { class: cls, type: 'button', textContent: label });
+	b.addEventListener('click', () => {
+		if (armed === undefined) {
+			b.textContent = confirmLabel;
+			b.classList.add('armed');
+			armed = window.setTimeout(() => {
+				armed = undefined;
+				b.textContent = label;
+				b.classList.remove('armed');
+			}, 4000);
+			return;
+		}
+		window.clearTimeout(armed);
+		armed = undefined;
+		b.textContent = label;
+		b.classList.remove('armed');
+		run();
+	});
+	return b;
+}
+
+const backHeader = (title: string): HTMLElement =>
+	el(
+		'header',
+		{},
+		el('div', { class: 'left' }, el('button', { class: 'icon', title: 'Back', ariaLabel: 'Back', textContent: '‹', onclick: goList }), el('span', { class: 'title', textContent: title }))
+	);
+
+// ------------------------------------------------------------------- list --
+
+async function listScreen(): Promise<void> {
+	const list = el('ul', { class: 'list' });
+	const empty = el(
+		'div',
+		{ class: 'center empty', hidden: true },
+		el('h1', { textContent: 'No accounts yet' }),
+		el('p', { class: 'hint', textContent: 'Put your maFiles into the storage folder and they show up here by themselves. Folders named maFiles in Downloads, Desktop and Documents are found too.' }),
+		el('div', { class: 'row-actions left' }, el('button', { class: 'primary', textContent: 'Open storage folder', onclick: () => void api.reveal() }), el('button', { class: 'small', textContent: 'Import maFiles…', onclick: () => void doImport() }))
+	);
+	const iconButton = (label: string, text: string, onclick: () => void) =>
+		el('button', { class: 'icon', title: label, ariaLabel: label, textContent: text, onclick });
+	const header = el(
+		'header',
+		{},
+		el('h1', { class: 'title', textContent: 'Codes' }),
+		el('div', { class: 'actions' }, iconButton('Check confirmations now', '↻', () => void api.refreshAll()), )
+	);
+	const strip = progressStrip();
+	const search = el('input', { type: 'text', class: 'search', placeholder: 'Filter accounts', value: query, ariaLabel: 'Filter accounts', spellcheck: false });
+	const chipRow = el('div', { class: 'filters' });
+	const chipDefs: ['all' | 'pending' | 'signin', string][] = [['all', 'All'], ['pending', 'Pending'], ['signin', 'Sign in']];
+	const renderChips = (): void =>
+		chipRow.replaceChildren(
+			...chipDefs.map(([id, text]) =>
+				el('button', { class: `fchip${listFilter === id ? ' on' : ''}`, type: 'button', textContent: text, onclick: () => { listFilter = id; renderChips(); applyFilter(); } })
+			)
+		);
+	renderChips();
+	const none = el('p', { class: 'hint center-text', hidden: true, textContent: 'No account matches.' });
+	function applyFilter(): void {
+		const q = query.trim().toLowerCase();
+		let shown = 0;
+		list.querySelectorAll<HTMLLIElement>('li').forEach((li) => {
+			const matchText = !q || (li.dataset['name'] ?? '').includes(q) || li.dataset['id']!.includes(q);
+			const st = li.dataset['state'];
+			const matchChip = listFilter === 'all' || (listFilter === 'pending' && Number(li.dataset['pending'] ?? 0) > 0) || (listFilter === 'signin' && st === 'signin');
+			li.hidden = !(matchText && matchChip);
+			if (!li.hidden) shown++;
+		});
+		none.hidden = shown > 0 || list.children.length === 0;
+	}
+	search.addEventListener('input', () => { query = search.value; applyFilter(); });
+	const filterBar = el('div', { class: 'filterbar' }, search, chipRow);
+	show(header, strip.node, el('main', {}, filterBar, list, none, empty));
+
+	async function doImport(): Promise<void> {
+		const r = await api.import();
+		if (!r.ok) return toast(r.error, true);
+		if (r.value.length === 0) return;
+		const failed = r.value.filter((x) => !x.ok);
+		toast(failed.length ? `${r.value.length - failed.length} imported, ${failed.length} failed: ${failed[0]!.message}` : `${r.value.length} imported`, failed.length > 0);
+		await refresh();
+	}
+
+	async function refresh(): Promise<void> {
+		const r = await api.accounts();
+		if (!r.ok) return toast(r.error, true);
+		empty.hidden = r.value.length > 0;
+		const existing = new Map<string, HTMLLIElement>();
+		list.querySelectorAll<HTMLLIElement>('li').forEach((li) => existing.set(li.dataset['id']!, li));
+
+		for (const row of r.value) {
+			let li = existing.get(row.steamId);
+			if (!li) {
+				li = buildRow(row);
+				list.append(li);
+			}
+			existing.delete(row.steamId);
+			updateRow(li, row);
+		}
+		existing.forEach((li) => li.remove());
+		pendingTotal = r.value.reduce((n, x) => n + (x.pending ?? 0), 0);
+		setTabCount();
+		filterBar.hidden = r.value.length === 0;
+		applyFilter();
+		await strip.update();
+		void updateTodoCount();
+	}
+
+	function buildRow(row: Row): HTMLLIElement {
+		const li = el('li', { class: 'row' });
+		li.dataset['id'] = row.steamId;
+		const copy = async (): Promise<void> => {
+			const c = await api.copyCode(row.steamId);
+			toast(c.ok ? 'Code copied' : c.error, !c.ok);
+		};
+		const badge = el('button', { class: 'badge', type: 'button', hidden: true, onclick: () => void navigate({ name: 'detail', id: row.steamId }) });
+		const open = el('button', { class: 'icon more', title: 'Details and confirmations', ariaLabel: `Details for ${row.name}`, textContent: '›', onclick: () => void navigate({ name: 'detail', id: row.steamId }) });
+		const code = el('button', { class: 'code', type: 'button', title: 'Click to copy', onclick: () => void copy() });
+		li.append(
+			el('span', { class: 'avatar-slot' }),
+			el('span', { class: 'who' }, profileLink(row.steamId, row.name, 'name'), el('span', { class: 'sid' })),
+			badge,
+			code,
+			open,
+			el('span', { class: 'bar' }, el('i'))
+		);
+		return li;
+	}
+
+	function updateRow(li: HTMLLIElement, row: Row): void {
+		const slot = li.querySelector<HTMLElement>('.avatar-slot')!;
+		const key = `${row.hasAvatar}|${settings.showAvatars}`;
+		if (slot.dataset['key'] !== key) {
+			slot.dataset['key'] = key;
+			slot.replaceChildren(settings.showAvatars ? avatarBox(row.name, row.steamId, row.hasAvatar, 'sm') : '');
+			slot.hidden = !settings.showAvatars;
+		}
+		li.querySelector('.name')!.textContent = row.name;
+		li.dataset['name'] = row.name.toLowerCase();
+		li.dataset['state'] = row.state;
+		li.dataset['pending'] = String(row.pending ?? 0);
+		const sid = li.querySelector<HTMLElement>('.sid')!;
+		sid.textContent = settings.showSteamId ? row.steamId : '';
+		sid.hidden = !settings.showSteamId;
+		li.querySelector('.code')!.textContent = row.code;
+
+		const badge = li.querySelector<HTMLButtonElement>('.badge')!;
+		badge.className = 'badge';
+		badge.hidden = false;
+		if (row.state === 'signin') {
+			badge.textContent = 'Sign in';
+			badge.classList.add('warn');
+			badge.title = 'Needed to see confirmations';
+		} else if (row.state === 'error') {
+			badge.textContent = 'Retry';
+			badge.classList.add('warn');
+			badge.title = 'Could not check confirmations';
+		} else if (row.pending) {
+			badge.textContent = `${row.pending} pending`;
+			badge.classList.add('hot');
+			badge.title = 'Review confirmations';
+		} else {
+			badge.hidden = true;
+		}
+		li.querySelector<HTMLElement>('.bar i')!.style.width = `${(row.remaining / 30) * 100}%`;
+		li.classList.toggle('expiring', row.remaining <= 5);
+	}
+
+	refreshView = () => void refresh();
+	await refresh();
+	timer = window.setInterval(() => void refresh(), 1000);
+}
+
+// ----------------------------------------------------------- confirmations --
+
+async function confirmsScreen(): Promise<void> {
+	const strip = progressStrip();
+	const body = el('main', {});
+	const header = el(
+		'header',
+		{},
+		el('h1', { class: 'title', textContent: 'Confirmations' }),
+		el('div', { class: 'actions' }, el('button', { class: 'icon', title: 'Check all accounts now', ariaLabel: 'Check all accounts now', textContent: '↻', onclick: () => { void api.refreshAll(); } }))
+	);
+	show(header, strip.node, body);
+	let data: (Status & { steamId: string; name: string })[] = [];
+	const search = el('input', { type: 'text', class: 'search', placeholder: 'Filter by account or text', value: query, ariaLabel: 'Filter confirmations', spellcheck: false });
+	const typeSel = el('select', { ariaLabel: 'Type' });
+	const list = el('div', { class: 'groups' });
+	const last = el('p', { class: 'hint last-checked' });
+	body.append(el('div', { class: 'filterbar' }, search, typeSel), last, list);
+	search.addEventListener('input', () => { query = search.value; draw(); });
+	typeSel.addEventListener('change', () => { confirmType = typeSel.value; draw(); });
+
+	async function act(steamId: string, action: 'accept' | 'deny', id: string): Promise<void> {
+		const r = await api.act(steamId, action, [id]);
+		toast(r.ok ? (action === 'accept' ? 'Accepted' : 'Denied') : r.error, !r.ok);
+		await load();
+	}
+
+	function draw(): void {
+		const types = [...new Set(data.flatMap((a) => a.items.map((i) => i.typeName)))].sort();
+		if (confirmType !== 'all' && !types.includes(confirmType)) confirmType = 'all';
+		typeSel.replaceChildren(el('option', { value: 'all', textContent: 'All types' }), ...types.map((t) => el('option', { value: t, textContent: t })));
+		typeSel.value = confirmType;
+		const q = query.trim().toLowerCase();
+		const groups: HTMLElement[] = [];
+		let total = 0;
+		for (const a of data) {
+			const items = a.items.filter((i) => (confirmType === 'all' || i.typeName === confirmType) && (!q || `${a.name} ${i.headline} ${i.summary.join(' ')}`.toLowerCase().includes(q)));
+			const nameMatch = !q || a.name.toLowerCase().includes(q);
+			const note =
+				a.state === 'signin' ? 'Sign in needed' : a.state === 'error' ? (a.message ?? 'Could not check') : a.state === 'loading' || a.state === 'idle' ? 'Checking…' : '';
+			if (!items.length && !(note && nameMatch && confirmType === 'all')) continue;
+			total += items.length;
+			const head = el(
+				'div',
+				{ class: 'group-head' },
+				profileLink(a.steamId, a.name, 'name'),
+				note ? el('button', { class: 'badge warn', type: 'button', textContent: note, onclick: () => void navigate({ name: 'detail', id: a.steamId }) }) : el('span', { class: 'hint', textContent: `${items.length}` })
+			);
+			const ul = el('ul', { class: 'items' }, ...items.map((it) => {
+				const actions = it.critical
+					? el('div', { class: 'item-actions' }, el('span', { class: 'item-warn', textContent: 'Security critical, review it on the account page' }), el('button', { class: 'small', type: 'button', textContent: 'Open', onclick: () => void navigate({ name: 'detail', id: a.steamId }) }))
+					: el('div', { class: 'item-actions' }, confirmButton('Accept', 'Click again to accept', 'small primary', () => void act(a.steamId, 'accept', it.id)), confirmButton('Deny', 'Click again to deny', 'small danger', () => void act(a.steamId, 'deny', it.id)));
+				return el(
+					'li',
+					{ class: `item${it.critical ? ' critical' : ''}` },
+					el('div', { class: 'item-body' }, el('span', { class: 'item-meta', textContent: `${it.typeName}${it.created ? ` · ${ago(it.created)}` : ''}` }), el('span', { class: 'item-title', textContent: it.headline || it.typeName }), ...it.summary.map((l) => el('span', { class: 'item-line', textContent: l })), actions)
+				);
+			}));
+			groups.push(el('section', { class: 'group' }, head, ul));
+		}
+		const times = data.filter((a) => a.fetchedAt > 0 && a.state !== 'signin').map((a) => a.fetchedAt);
+		last.textContent = times.length ? `Last checked ${ago(Math.min(...times))}. Press ↻ to check again.` : 'Not checked yet. Press ↻ to check.';
+		const running = data.some((a) => a.state === 'loading' || a.state === 'idle');
+		list.replaceChildren(...(groups.length ? groups : [el('div', { class: 'center empty-state' }, el('h1', { textContent: running ? 'Checking…' : total === 0 && !q && confirmType === 'all' ? 'Nothing pending' : 'Nothing matches' }), el('p', { class: 'hint', textContent: running ? 'Results appear as each account answers.' : 'Open trade offers and market listings that need your confirmation show up here.' }))]));
+	}
+
+	async function load(): Promise<void> {
+		const r = await api.allConfirmations();
+		if (!r.ok) return toast(r.error, true);
+		data = r.value;
+		pendingTotal = data.reduce((n, a) => n + (a.state === 'ok' ? a.items.length : 0), 0);
+		setTabCount();
+		draw();
+		await strip.update();
+	}
+	refreshView = () => void load();
+	await load();
+	timer = window.setInterval(() => void load(), 2000);
+}
+
+// ------------------------------------------------------------------- todo --
+
+async function todoScreen(): Promise<void> {
+	const body = el('main', {});
+	show(el('header', {}, el('h1', { class: 'title', textContent: 'To do' })), body);
+
+	const SECTIONS: { kind: TodoItem['kind']; title: string; hint: string }[] = [
+		{ kind: 'activation', title: 'Finish activation', hint: 'An authenticator was added to Steam but never activated.' },
+		{ kind: 'signin', title: 'Sign in', hint: 'A sign-in is needed to see confirmations.' },
+		{ kind: 'password', title: 'Save a password', hint: 'Lets the app sign in by itself. Saved in plain text on this computer.' },
+		{ kind: 'revocation', title: 'Add the revocation code', hint: 'Needed to remove Steam Guard from an account. It looks like R12345.' }
+	];
+
+	async function load(): Promise<void> {
+		const r = await api.todo();
+		if (!r.ok) return toast(r.error, true);
+		const items = r.value;
+		void updateTodoCount();
+		if (items.length === 0) {
+			body.replaceChildren(el('div', { class: 'center empty-state' }, el('h1', { textContent: 'All set' }), el('p', { class: 'hint', textContent: 'Nothing is missing for any account.' })));
+			return;
+		}
+		const ignore = async (it: TodoItem): Promise<void> => {
+			const res = await api.todoIgnore(it.steamId, it.kind);
+			if (!res.ok) return toast(res.error, true);
+			applySettings(res.value);
+			await load();
+		};
+		const sections = SECTIONS.map((sec) => {
+			const mine = items.filter((i) => i.kind === sec.kind);
+			if (!mine.length) return null;
+			const rows = mine.map((it) => {
+				const head = el('div', { class: 'todo-head' }, profileLink(it.steamId, it.name, 'name'), el('span', { class: 'hint', textContent: it.detail }));
+				let action: HTMLElement;
+				if (it.kind === 'password' || it.kind === 'revocation') {
+					const isPw = it.kind === 'password';
+					const input = el('input', { type: isPw ? 'password' : 'text', placeholder: isPw ? 'Steam password' : 'R12345', autocomplete: 'off', spellcheck: false, ariaLabel: isPw ? `Password for ${it.name}` : `Revocation code for ${it.name}` });
+					const form = el('form', { class: 'todo-form' }, input, el('button', { class: 'small primary', type: 'submit', textContent: 'Save' }), el('button', { class: 'link', type: 'button', textContent: 'Not needed', onclick: () => void ignore(it) }));
+					form.addEventListener('submit', async (e) => {
+						e.preventDefault();
+						if (!input.value.trim()) return;
+						const res = isPw ? await api.setPassword(it.steamId, input.value) : await api.setRevocation(it.steamId, input.value);
+						if (!res.ok) return toast(res.error, true);
+						toast(isPw ? 'Password saved' : 'Revocation code saved');
+						await load();
+					});
+					action = form;
+				} else if (it.kind === 'signin') {
+					action = el('div', { class: 'todo-form' }, el('button', { class: 'small primary', type: 'button', textContent: 'Open account', onclick: () => void navigate({ name: 'detail', id: it.steamId }) }));
+				} else {
+					action = el('div', { class: 'todo-form' }, el('button', { class: 'small primary', type: 'button', textContent: 'Continue', onclick: () => void navigate({ name: 'add' }) }));
+				}
+				return el('li', { class: 'todo-item' }, head, action);
+			});
+			return el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: `${sec.title} (${mine.length})` }), el('p', { class: 'hint', textContent: sec.hint }), el('ul', { class: 'todo-list' }, ...rows));
+		}).filter((x): x is HTMLElement => x !== null);
+		body.replaceChildren(el('div', { class: 'groups' }, ...sections));
+	}
+	refreshView = () => undefined;
+	await load();
+}
+
+// ----------------------------------------------------------------- export --
+
+const FIELD_INFO: Record<string, { label: string; key: string; example: string }> = {
+	username: { label: 'Username', key: 'username', example: 'examplename' },
+	password: { label: 'Password', key: 'password', example: 'hunter2' },
+	steamId: { label: 'SteamID64', key: 'steamid64', example: '76561198012345678' },
+	sharedSecret: { label: 'shared_secret', key: 'shared_secret', example: 'Zm9vYmFyYmF6cXV4MTIzNDU2Nzg=' },
+	identitySecret: { label: 'identity_secret', key: 'identity_secret', example: 'cXV4YmF6YmFyZm9vODc2NTQzMjE=' },
+	revocationCode: { label: 'Revocation code', key: 'revocation_code', example: 'R12345' }
+};
+const SEPARATORS: [string, string][] = [[':', ':'], [';', ';'], [',', ','], ['.', '.'], ['|', '|'], ['Tab', '\t'], ['Space', ' ']];
+
+async function exportScreen(): Promise<void> {
+	const info = await api.exportInfo();
+	if (!info.ok) {
+		toast(info.error, true);
+		return goList();
+	}
+	const accountsList = info.value;
+	let order = [...settings.exportFields.filter((f) => f in FIELD_INFO)];
+	let on = new Set(order);
+	let delimiter = settings.exportDelimiter;
+	let skip = settings.exportSkipIncomplete;
+	const chosen = new Set(accountsList.map((a) => a.steamId));
+
+	const body = el('main', {});
+	show(el('header', {}, el('h1', { class: 'title', textContent: 'Export' })), body);
+
+	const fieldsBox = el('div', { class: 'field-list' });
+	const sepBox = el('div', { class: 'filters' });
+	const custom = el('input', { type: 'text', class: 'custom-sep', maxLength: 5, placeholder: 'other', ariaLabel: 'Custom separator', spellcheck: false });
+	const formatLine = el('code', { class: 'format' });
+	const exampleBox = el('pre', { class: 'example' });
+	const status = el('p', { class: 'hint' });
+	const accBox = el('div', { class: 'acc-list' });
+	const copyBtn = el('button', { class: 'primary', type: 'button', textContent: 'Copy' });
+	const saveBtn = el('button', { class: 'small', type: 'button', textContent: 'Save as .txt…' });
+
+	const fullOrder = (): string[] => [...order.filter((f) => on.has(f)), ...Object.keys(FIELD_INFO).filter((f) => !on.has(f))];
+	const fields = (): string[] => order.filter((f) => on.has(f));
+	const ids = (): string[] => accountsList.filter((a) => chosen.has(a.steamId)).map((a) => a.steamId);
+
+	function persist(): void {
+		void api.setSettings({ exportFields: fields(), exportDelimiter: delimiter, exportSkipIncomplete: skip }).then((r) => r.ok && applySettings(r.value));
+	}
+
+	function drawFields(): void {
+		const all = fullOrder();
+		fieldsBox.replaceChildren(
+			...all.map((f) => {
+				const selected = on.has(f);
+				const idx = fields().indexOf(f);
+				const cb = el('input', { type: 'checkbox', checked: selected, ariaLabel: FIELD_INFO[f]!.label, onchange: () => { if (cb.checked) { on.add(f); order = [...fields().filter((x) => x !== f), f]; } else on.delete(f); drawFields(); update(); } });
+				const up = el('button', { class: 'icon', type: 'button', title: 'Move up', ariaLabel: `Move ${FIELD_INFO[f]!.label} up`, textContent: '↑', disabled: !selected || idx <= 0, onclick: () => { const a = fields(); [a[idx - 1], a[idx]] = [a[idx]!, a[idx - 1]!]; order = a; drawFields(); update(); } });
+				const down = el('button', { class: 'icon', type: 'button', title: 'Move down', ariaLabel: `Move ${FIELD_INFO[f]!.label} down`, textContent: '↓', disabled: !selected || idx === fields().length - 1, onclick: () => { const a = fields(); [a[idx + 1], a[idx]] = [a[idx]!, a[idx + 1]!]; order = a; drawFields(); update(); } });
+				return el('div', { class: `field${selected ? ' on' : ''}` }, el('label', { class: 'check' }, cb, el('span', { class: 'pos', textContent: selected ? String(idx + 1) : '' }), FIELD_INFO[f]!.label), el('span', { class: 'moves' }, up, down));
+			})
+		);
+	}
+
+	function drawSeps(): void {
+		const isPreset = SEPARATORS.some(([, v]) => v === delimiter);
+		sepBox.replaceChildren(
+			...SEPARATORS.map(([label, value]) => el('button', { class: `fchip${delimiter === value ? ' on' : ''}`, type: 'button', textContent: label, onclick: () => { delimiter = value; custom.value = ''; drawSeps(); update(); } })),
+			custom
+		);
+		if (!isPreset) custom.value = delimiter;
+	}
+	custom.addEventListener('input', () => {
+		if (custom.value) {
+			delimiter = custom.value;
+			drawSeps();
+			update();
+		}
+	});
+
+	function drawAccounts(): void {
+		accBox.replaceChildren(
+			el('div', { class: 'acc-actions' }, el('button', { class: 'link', type: 'button', textContent: 'All', onclick: () => { accountsList.forEach((a) => chosen.add(a.steamId)); drawAccounts(); update(); } }), el('button', { class: 'link', type: 'button', textContent: 'None', onclick: () => { chosen.clear(); drawAccounts(); update(); } })),
+			...accountsList.map((a) => {
+				const cb = el('input', { type: 'checkbox', checked: chosen.has(a.steamId), onchange: () => { if (cb.checked) chosen.add(a.steamId); else chosen.delete(a.steamId); update(); } });
+				const notes = [!a.hasPassword && on.has('password') ? 'no password' : '', !a.hasRevocation && on.has('revocationCode') ? 'no revocation code' : ''].filter(Boolean).join(', ');
+				return el('label', { class: 'check acc' }, cb, a.name, ...(notes ? [el('span', { class: 'hint', textContent: notes })] : []));
+			})
+		);
+	}
+
+	const shown = (v: string): string => v.replace(/\t/g, '⇥').replace(/ /g, '␣');
+	let timerId: number | undefined;
+	function update(): void {
+		const f = fields();
+		const names = f.map((x) => FIELD_INFO[x]!.key);
+		formatLine.textContent = f.length ? names.join(shown(delimiter)) : '(choose at least one field)';
+		const row = (n: number): string => f.map((x) => (x === 'username' ? `${FIELD_INFO[x]!.example}${n}` : x === 'steamId' ? String(BigInt(FIELD_INFO[x]!.example) + BigInt(n - 1)) : FIELD_INFO[x]!.example)).join(delimiter.replace(/\t/g, '\t'));
+		exampleBox.textContent = f.length ? [1, 2].map(row).join('\n') : '';
+		drawAccountsNotes();
+		window.clearTimeout(timerId);
+		timerId = window.setTimeout(async () => {
+			if (f.length === 0 || ids().length === 0) {
+				status.textContent = f.length === 0 ? 'Choose at least one field.' : 'Choose at least one account.';
+				status.className = 'hint';
+				copyBtn.disabled = saveBtn.disabled = true;
+				return;
+			}
+			const r = await api.exportCheck(ids(), f, delimiter, skip);
+			if (!r.ok) {
+				status.textContent = r.error;
+				status.className = 'hint error';
+				copyBtn.disabled = saveBtn.disabled = true;
+				return;
+			}
+			const { count, skipped, conflicts } = r.value;
+			const parts = [`${count} line${count === 1 ? '' : 's'} will be written`];
+			if (skipped) parts.push(`${skipped} account${skipped === 1 ? '' : 's'} left out (missing value)`);
+			status.textContent = parts.join(', ') + '.' + (conflicts ? ` Warning: ${conflicts} value${conflicts === 1 ? ' contains' : 's contain'} this separator, so a line could be read back wrongly. Pick another separator.` : '');
+			status.className = conflicts ? 'hint warn' : 'hint';
+			copyBtn.disabled = saveBtn.disabled = count === 0;
+		}, 80);
+		persist();
+	}
+	function drawAccountsNotes(): void {
+		accBox.querySelectorAll<HTMLElement>('.acc').forEach((label, i) => {
+			const a = accountsList[i]!;
+			const hint = label.querySelector('.hint');
+			const notes = [!a.hasPassword && on.has('password') ? 'no password' : '', !a.hasRevocation && on.has('revocationCode') ? 'no revocation code' : ''].filter(Boolean).join(', ');
+			if (hint) hint.textContent = notes;
+			else if (notes) label.append(el('span', { class: 'hint', textContent: notes }));
+		});
+	}
+
+	copyBtn.addEventListener('click', async () => {
+		const r = await api.exportCopy(ids(), fields(), delimiter, skip);
+		toast(r.ok ? `${r.value} line${r.value === 1 ? '' : 's'} copied` : r.error, !r.ok);
+	});
+	saveBtn.addEventListener('click', async () => {
+		const r = await api.exportSave(ids(), fields(), delimiter, skip);
+		if (!r.ok) return toast(r.error, true);
+		if (r.value) toast(`Saved ${r.value.count} line${r.value.count === 1 ? '' : 's'}`);
+	});
+	const skipBox = el('input', { type: 'checkbox', checked: skip, onchange: () => { skip = skipBox.checked; update(); } });
+
+	body.append(
+		el(
+			'div',
+			{ class: 'groups' },
+			el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: '1. What to include, in which order' }), el('p', { class: 'hint', textContent: 'Tick the fields and use the arrows to set the order.' }), fieldsBox),
+			el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: '2. Separator' }), el('p', { class: 'hint', textContent: 'Put between the values on each line.' }), sepBox),
+			el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: '3. Example' }), el('p', { class: 'hint', textContent: 'Made-up data, one line per account:' }), formatLine, exampleBox),
+			el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: '4. Accounts' }), accBox, el('label', { class: 'check' }, skipBox, 'Leave out accounts that are missing a chosen value')),
+			el('section', { class: 'group' }, status, el('div', { class: 'row-actions left' }, copyBtn, saveBtn), el('p', { class: 'hint', textContent: 'The result is plain text with your real passwords and secrets. Keep it safe and delete it when done. Copied text is cleared from the clipboard after the time set in Settings.' }))
+		)
+	);
+	drawFields();
+	drawSeps();
+	drawAccounts();
+	update();
+	refreshView = () => undefined;
+}
+
+// -------------------------------------------------------------------- add --
+
+async function addScreen(): Promise<void> {
+	const body = el('main', {});
+	show(backHeader('Add account'), body);
+	const run = async (p: P<EnrollState>, after?: (s: EnrollState) => void): Promise<void> => {
+		const r = await p;
+		if (!r.ok) return toast(r.error, true);
+		after?.(r.value);
+		draw(r.value);
+	};
+	const input = (placeholder: string, type = 'text'): HTMLInputElement =>
+		el('input', { type, placeholder, autocomplete: 'off', spellcheck: false });
+	const submitting = (form: HTMLFormElement, fn: () => Promise<void>): void => {
+		form.addEventListener('submit', async (e) => {
+			e.preventDefault();
+			const btn = form.querySelector<HTMLButtonElement>('button[type=submit]')!;
+			btn.disabled = true;
+			try {
+				await fn();
+			} finally {
+				btn.disabled = false;
+			}
+		});
+	};
+
+	function draw(s: EnrollState): void {
+		if (s.step === 'credentials') return drawCredentials();
+		if (s.step === 'loginCode') return drawLoginCode(s);
+		if (s.step === 'confirm') return drawConfirm(s);
+		if (s.step === 'activate') return drawActivate(s);
+		return drawDone(s);
+	}
+
+	function drawCredentials(): void {
+		const user = input('Steam username');
+		const pw = input('Password', 'password');
+		const save = el('input', { type: 'checkbox', checked: true });
+		const form = el(
+			'form',
+			{ class: 'signin' },
+			el('h1', { textContent: 'New authenticator' }),
+			el('p', { class: 'hint', textContent: 'For an account that has no Steam Guard Mobile Authenticator yet. Signs in once and creates the maFile for you.' }),
+			user,
+			pw,
+			el('label', { class: 'check' }, save, 'Save the password (plain text, used for automatic sign-in)'),
+			el('button', { class: 'primary', type: 'submit', textContent: 'Sign in' })
+		);
+		submitting(form, async () => {
+			await run(api.enrollBegin(user.value, pw.value, save.checked));
+		});
+		const importCard = el(
+			'div',
+			{ class: 'card-note' },
+			el('span', { class: 'hint', textContent: 'Already have a maFile?' }),
+			el('button', { class: 'small', type: 'button', textContent: 'Import maFiles…', onclick: async () => {
+				const r = await api.import();
+				if (!r.ok) return toast(r.error, true);
+				if (r.value.length === 0) return;
+				const failed = r.value.filter((x) => !x.ok);
+				toast(failed.length ? failed[0]!.message : `${r.value.length} imported`, failed.length > 0);
+				if (!failed.length) goList();
+			} })
+		);
+		body.replaceChildren(form, importCard);
+		user.focus();
+	}
+
+	function drawLoginCode(s: EnrollState): void {
+		const code = input('Code from the email', 'text');
+		const form = el(
+			'form',
+			{ class: 'signin' },
+			el('h1', { textContent: 'Check your email' }),
+			el('p', { class: 'hint', textContent: `Steam sent a sign-in code to your email${s.detail ? ` (${s.detail})` : ''}.` }),
+			code,
+			el('button', { class: 'primary', type: 'submit', textContent: 'Continue' }),
+			el('button', { class: 'link', type: 'button', textContent: 'Start over', onclick: () => void run(api.enrollReset()) })
+		);
+		submitting(form, async () => {
+			await run(api.enrollLoginCode(code.value));
+		});
+		body.replaceChildren(form);
+		code.focus();
+	}
+
+	function drawConfirm(s: EnrollState): void {
+		body.replaceChildren(
+			el(
+				'div',
+				{ class: 'signin' },
+				el('h1', { textContent: `Add Steam Guard to ${s.accountName}?` }),
+				el('p', { class: 'hint warn', textContent: 'This changes the account on Steam. A new authenticator is attached and a revocation code is created. Steam only shows it once, so write it down on the next screen.' }),
+				el('p', { class: 'hint', textContent: 'Steam then sends an activation code by SMS, or by email if the account has no phone.' }),
+				el('button', { class: 'primary', type: 'button', textContent: 'Add authenticator', onclick: (e: Event) => {
+					const b = e.currentTarget as HTMLButtonElement;
+					b.disabled = true;
+					void run(api.enrollAdd()).finally(() => (b.disabled = false));
+				} }),
+				el('button', { class: 'link', type: 'button', textContent: 'Cancel', onclick: () => void run(api.enrollReset()) })
+			)
+		);
+	}
+
+	function revocationBlock(code: string | undefined): HTMLElement {
+		if (!code) return el('p', { class: 'hint error', textContent: 'No revocation code was received.' });
+		return el(
+			'div',
+			{ class: 'revocation' },
+			el('span', { class: 'hint', textContent: 'Revocation code, write it down' }),
+			el('code', { textContent: code }),
+			el('button', { class: 'small', type: 'button', textContent: 'Copy', onclick: async () => {
+				const r = await api.enrollCopyRevocation();
+				toast(r.ok ? 'Revocation code copied' : r.error, !r.ok);
+			} })
+		);
+	}
+
+	function drawActivate(s: EnrollState): void {
+		const code = input('Activation code', 'text');
+		const where = s.phoneHint ? `by SMS to ${s.phoneHint}` : 'by SMS or email';
+		const form = el(
+			'form',
+			{ class: 'signin' },
+			el('h1', { textContent: 'Activate' }),
+			el('p', { class: 'hint', textContent: s.resumed ? 'An earlier attempt for this account was never activated. Enter the newest code Steam sent.' : `The authenticator is saved. Enter the code Steam sent ${where}.` }),
+			revocationBlock(s.revocationCode),
+			code,
+			el('button', { class: 'primary', type: 'submit', textContent: 'Activate' }),
+			confirmButton('Cancel and remove it again', 'Click again to remove from Steam', 'link', async () => {
+				const r = await api.enrollCancel();
+				if (!r.ok) return toast(r.error, true);
+				draw(r.value);
+				toast('Removed');
+			})
+		);
+		submitting(form, async () => {
+			toast('Activating…');
+			await run(api.enrollActivate(code.value));
+		});
+		body.replaceChildren(form);
+		code.focus();
+	}
+
+	function drawDone(s: EnrollState): void {
+		body.replaceChildren(
+			el(
+				'div',
+				{ class: 'signin' },
+				el('h1', { textContent: `${s.accountName} is ready` }),
+				el('p', { class: 'hint', textContent: 'The maFile is saved in the storage folder and the account appears in the list. Keep the revocation code somewhere safe.' }),
+				revocationBlock(s.revocationCode),
+				el('button', { class: 'primary', type: 'button', textContent: 'Done', onclick: () => { void api.enrollReset(); goList(); } })
+			)
+		);
+	}
+
+	const cur = await api.enrollState();
+	draw(cur.ok ? cur.value : { step: 'credentials' });
+}
+
+// ----------------------------------------------------------------- detail --
+
+async function detailScreen(id: string): Promise<void> {
+	const d = await api.detail(id);
+	if (!d.ok) {
+		toast(d.error, true);
+		return goList();
+	}
+	const selected = new Set<string>();
+	let lastSig = '';
+
+	const copyBtn = (label: string, field: string): HTMLButtonElement =>
+		el('button', {
+			class: 'chip',
+			type: 'button',
+			textContent: label,
+			onclick: async () => {
+				const r = await api.copyField(id, field);
+				toast(r.ok ? `${label} copied` : r.error, !r.ok);
+			}
+		});
+
+	const chips = el('div', { class: 'chips' }, copyBtn('Username', 'username'), copyBtn('Shared secret', 'sharedSecret'), copyBtn('Identity secret', 'identitySecret'), ...(d.value.hasRevocation ? [copyBtn('Revocation code', 'revocationCode')] : []));
+	let hasPassword = d.value.hasPassword;
+	let editingPassword = false;
+	const pwBlock = el('div', { class: 'pwblock' });
+	function renderPw(): void {
+		if (editingPassword) {
+			const input = el('input', { type: 'password', placeholder: 'Steam password', autocomplete: 'off' });
+			const save = el('button', { class: 'small primary', type: 'submit', textContent: 'Save' });
+			const cancel = el('button', { class: 'small', type: 'button', textContent: 'Cancel', onclick: () => { editingPassword = false; renderPw(); } });
+			const form = el('form', { class: 'pwform' }, input, el('div', { class: 'row-actions left' }, save, cancel), el('p', { class: 'hint', textContent: 'Saved in plain text on this computer (credentials.json) and used to sign in automatically.' }));
+			form.addEventListener('submit', async (e) => {
+				e.preventDefault();
+				if (!input.value) return;
+				const r = await api.setPassword(id, input.value);
+				if (!r.ok) return toast(r.error, true);
+				hasPassword = true;
+				editingPassword = false;
+				renderPw();
+				toast('Password saved');
+			});
+			pwBlock.replaceChildren(form);
+			input.focus();
+		} else if (hasPassword) {
+			pwBlock.replaceChildren(
+				el('div', { class: 'chips' }, copyBtn('Password', 'password'), el('button', { class: 'chip', type: 'button', textContent: 'Change', onclick: () => { editingPassword = true; renderPw(); } }), confirmButton('Remove password', 'Click again to remove', 'chip', async () => {
+					const r = await api.clearPassword(id);
+					if (!r.ok) return toast(r.error, true);
+					hasPassword = false;
+					renderPw();
+					toast('Saved password removed');
+				}))
+			);
+		} else {
+			pwBlock.replaceChildren(el('div', { class: 'chips' }, el('button', { class: 'chip', type: 'button', textContent: 'Save password…', onclick: () => { editingPassword = true; renderPw(); } })));
+		}
+	}
+	renderPw();
+	const sidLine = settings.showSteamId
+		? el('button', { class: 'sidcopy', type: 'button', title: 'Copy SteamID64', textContent: d.value.steamId, onclick: async () => { await api.copyField(id, 'steamId'); toast('SteamID64 copied'); } })
+		: '';
+	const profile = el('div', { class: 'profile' }, avatarBox(d.value.name, id, true, 'lg'), el('div', { class: 'who' }, profileLink(id, d.value.name, 'name big'), sidLine));
+
+	const body = el('div', { class: 'conf' });
+	const refreshBtn = el('button', { class: 'icon', title: 'Check now', ariaLabel: 'Check for confirmations', textContent: '↻', onclick: async () => {
+		refreshBtn.disabled = true;
+		const r = await api.refresh(id);
+		refreshBtn.disabled = false;
+		if (r.ok) render(r.value, true);
+		else toast(r.error, true);
+	} });
+
+	const removeBtn = confirmButton('Remove account…', 'Click again to remove', 'danger-link', async () => {
+		const r = await api.remove(id);
+		if (!r.ok) return toast(r.error, true);
+		toast('Removed from this app. Your original maFile is untouched');
+		goList();
+	});
+
+	const webBar = el(
+		'div',
+		{ class: 'chips' },
+		...([['profile', 'Profile'], ['inventory', 'Inventory'], ['tradeoffers', 'Trade offers'], ['market', 'Market'], ['store', 'Store'], ['account', 'Account']] as const).map(([target, label]) =>
+			el('button', {
+				class: 'chip',
+				type: 'button',
+				textContent: label,
+				onclick: async (e: Event) => {
+					const b = e.currentTarget as HTMLButtonElement;
+					b.disabled = true;
+					const r = await api.openSteam(id, target);
+					b.disabled = false;
+					if (!r.ok) toast(r.error, true);
+				}
+			})
+		)
+	);
+
+	show(
+		backHeader('Account'),
+		el('main', {}, profile, chips, pwBlock, el('h2', { textContent: 'Open on Steam, signed in' }), webBar, el('p', { class: 'hint', textContent: 'Opens a separate window that is already logged in as this account. Nothing is kept when you close it.' }), el('div', { class: 'section-head' }, el('h2', { textContent: 'Confirmations' }), refreshBtn), body, el('div', { class: 'danger-zone' }, removeBtn))
+	);
+
+	async function act(action: 'accept' | 'deny', ids: string[]): Promise<void> {
+		if (ids.length === 0) return;
+		const r = await api.act(id, action, ids);
+		if (!r.ok) {
+			toast(r.error, true);
+			const cur = await api.confirmations(id);
+			if (cur.ok) render(cur.value, true);
+			return;
+		}
+		ids.forEach((x) => selected.delete(x));
+		toast(`${ids.length} ${action === 'accept' ? 'accepted' : 'denied'}`);
+		render(r.value, true);
+	}
+
+	function render(s: Status, force = false): void {
+		const sig = JSON.stringify([s.state, s.message, s.unreadable, s.items.map((i) => i.id)]);
+		if (!force && sig === lastSig) return;
+		lastSig = sig;
+		for (const x of [...selected]) if (!s.items.some((i) => i.id === x)) selected.delete(x);
+
+		if (s.state === 'idle' || s.state === 'loading') {
+			if (s.items.length === 0) return body.replaceChildren(el('p', { class: 'hint', textContent: 'Checking…' }));
+		}
+		if (s.state === 'signin') return body.replaceChildren(signInForm(s.message));
+		if (s.state === 'error' && s.items.length === 0) {
+			return body.replaceChildren(el('p', { class: 'hint error', textContent: s.message ?? 'Could not check confirmations' }), el('button', { class: 'link', textContent: 'Try again', onclick: () => refreshBtn.click() }));
+		}
+
+		const parts: Node[] = [];
+		if (s.state === 'error') parts.push(el('p', { class: 'hint error', textContent: `${s.message ?? 'Could not refresh'}. Showing the last result.` }));
+		if (s.unreadable > 0) parts.push(el('p', { class: 'hint warn', textContent: `${s.unreadable} confirmation${s.unreadable > 1 ? 's' : ''} could not be read. Check them in the Steam app.` }));
+		if (s.items.length === 0) {
+			parts.push(el('p', { class: 'hint', textContent: s.unreadable ? 'Nothing else pending.' : 'No pending confirmations.' }));
+			return body.replaceChildren(...parts);
+		}
+
+		const ul = el('ul', { class: 'items' });
+		for (const it of s.items) ul.append(itemRow(it));
+		parts.push(ul, actionBar(s));
+		body.replaceChildren(...parts);
+	}
+
+	function itemRow(it: Item): HTMLLIElement {
+		const box = el('input', { type: 'checkbox', checked: selected.has(it.id), disabled: it.critical, ariaLabel: `Select ${it.headline || it.typeName}` });
+		box.addEventListener('change', () => {
+			if (box.checked) selected.add(it.id);
+			else selected.delete(it.id);
+			updateBar();
+		});
+		const meta = [it.typeName, ago(it.created)].filter(Boolean).join(' · ');
+		const li = el(
+			'li',
+			{ class: it.critical ? 'item critical' : 'item' },
+			el('label', {}, box),
+			el(
+				'div',
+				{ class: 'item-body' },
+				el('span', { class: 'item-meta', textContent: meta }),
+				el('span', { class: 'item-title', textContent: it.headline || it.typeName }),
+				...it.summary.slice(0, 4).map((line) => el('span', { class: 'item-line', textContent: line })),
+				...(it.critical
+					? [
+							el('span', { class: 'item-warn', textContent: 'Security-related. Accept only if you started this yourself.' }),
+							el('span', { class: 'item-actions' }, el('button', { class: 'small', textContent: 'Deny', onclick: () => void act('deny', [it.id]) }), confirmButton('Accept', 'Really accept?', 'small danger', () => void act('accept', [it.id])))
+						]
+					: [])
+			)
+		);
+		return li;
+	}
+
+	let barRefs: { acceptSel: HTMLButtonElement; denySel: HTMLButtonElement } | undefined;
+	function actionBar(s: Status): HTMLElement {
+		const normal = s.items.filter((i) => !i.critical).map((i) => i.id);
+		const acceptSel = el('button', { class: 'small primary', type: 'button', onclick: () => void act('accept', [...selected]) });
+		const denySel = el('button', { class: 'small', type: 'button', onclick: () => void act('deny', [...selected]) });
+		barRefs = { acceptSel, denySel };
+		const hasCritical = s.items.length !== normal.length;
+		const bar = el(
+			'div',
+			{ class: 'bar-actions' },
+			el('div', { class: 'row-actions' }, denySel, acceptSel),
+			el(
+				'div',
+				{ class: 'row-actions all' },
+				normal.length
+					? confirmButton(`Deny all (${normal.length})`, `Deny ${normal.length}? Click again`, 'small', () => void act('deny', normal))
+					: '',
+				normal.length
+					? confirmButton(`Accept all (${normal.length})`, `Accept ${normal.length}? Click again`, 'small', () => void act('accept', normal))
+					: ''
+			),
+			hasCritical ? el('p', { class: 'hint', textContent: 'Security-related requests are not included in "all".' }) : ''
+		);
+		updateBar();
+		return bar;
+	}
+	function updateBar(): void {
+		if (!barRefs) return;
+		const n = selected.size;
+		barRefs.acceptSel.textContent = `Accept selected${n ? ` (${n})` : ''}`;
+		barRefs.denySel.textContent = `Deny selected${n ? ` (${n})` : ''}`;
+		barRefs.acceptSel.disabled = barRefs.denySel.disabled = n === 0;
+	}
+
+	function signInForm(message?: string): HTMLElement {
+		const pw = el('input', { type: 'password', placeholder: 'Steam password', autocomplete: 'current-password' });
+		const err = el('p', { class: 'hint error', textContent: message ?? '' });
+		const saveBox = el('input', { type: 'checkbox', checked: true });
+		const saveLabel = el('label', { class: 'check' }, saveBox, hasPassword ? 'Replace the saved password' : 'Save password on this computer');
+		const btn = el('button', { class: 'primary', type: 'submit', textContent: 'Sign in' });
+		const form = el(
+			'form',
+			{ class: 'signin' },
+			el('p', { class: 'hint', textContent: 'Sign-in is needed once to see confirmations. The Steam Guard code is added automatically.' }),
+			pw,
+			saveLabel,
+			err,
+			btn
+		);
+		form.addEventListener('submit', async (e) => {
+			e.preventDefault();
+			if (!pw.value) return;
+			btn.disabled = true;
+			btn.textContent = 'Signing in…';
+			err.textContent = '';
+			const r = await api.signIn(id, pw.value, saveBox.checked);
+			pw.value = '';
+			btn.disabled = false;
+			btn.textContent = 'Sign in';
+			if (!r.ok) {
+				err.textContent = r.error;
+				return;
+			}
+			if (saveBox.checked) {
+				hasPassword = true;
+				renderPw();
+			}
+			render(r.value, true);
+		});
+		return form;
+	}
+
+	refreshView = async () => {
+		const r = await api.confirmations(id);
+		if (r.ok) render(r.value);
+	};
+	const first = await api.confirmations(id);
+	if (first.ok) {
+		render(first.value, true);
+	}
+	timer = window.setInterval(() => void refreshView(), 3000);
+}
+
+// --------------------------------------------------------------- settings --
+
+async function settingsScreen(): Promise<void> {
+	const s = settings;
+	const set = async (patch: Partial<Settings>): Promise<void> => {
+		const r = await api.setSettings(patch);
+		if (!r.ok) return toast(r.error, true);
+		applySettings(r.value);
+		void settingsScreen();
+	};
+
+	const row = (label: string, hint: string, control: HTMLElement): HTMLElement =>
+		el('div', { class: 'setting' }, el('div', { class: 'setting-text' }, el('span', { class: 'setting-label', textContent: label }), hint ? el('span', { class: 'hint', textContent: hint }) : ''), control);
+
+	const toggle = (value: boolean, on: (v: boolean) => void, label: string): HTMLElement => {
+		const b = el('button', { class: 'switch', type: 'button', role: 'switch', ariaChecked: String(value), ariaLabel: label });
+		b.addEventListener('click', () => on(!value));
+		return b;
+	};
+	const select = <T extends string | number>(value: T, options: [T, string][], on: (v: T) => void, label: string): HTMLElement => {
+		const sel = el('select', { ariaLabel: label });
+		for (const [v, text] of options) sel.append(el('option', { value: String(v), textContent: text, selected: v === value }));
+		sel.addEventListener('change', () => {
+			const picked = options.find(([v]) => String(v) === sel.value);
+			if (picked) on(picked[0]);
+		});
+		return sel;
+	};
+
+	const folders = el(
+		'ul',
+		{ class: 'folders' },
+		...s.importFolders.map((f) => el('li', {}, el('span', { class: 'path', title: f, textContent: f }), el('button', { class: 'icon', title: 'Remove folder', ariaLabel: `Remove ${f}`, textContent: '✕', onclick: () => void set({ importFolders: s.importFolders.filter((x) => x !== f) }) })))
+	);
+
+	show(
+		backHeader('Settings'),
+		el(
+			'main',
+			{ class: 'settings' },
+			el('h2', { textContent: 'Appearance' }),
+			row('Theme', '', select(s.theme, [['system', 'System'], ['dark', 'Dark'], ['light', 'Light']], (v) => void set({ theme: v }), 'Theme')),
+			row('Density', '', select(s.density, [['comfortable', 'Comfortable'], ['compact', 'Compact']], (v) => void set({ density: v }), 'Density')),
+			row('Show SteamID64', 'Under each account name', toggle(s.showSteamId, (v) => void set({ showSteamId: v }), 'Show SteamID64')),
+			row('Show profile pictures', 'Fetched from the public profile, at most once a week per account', toggle(s.showAvatars, (v) => void set({ showAvatars: v }), 'Show profile pictures')),
+			el('h2', { textContent: 'Confirmations' }),
+			row('Check when the app starts', 'One round, one account at a time', toggle(s.checkOnStartup, (v) => void set({ checkOnStartup: v }), 'Check when the app starts')),
+			row('Check repeatedly', 'Off is safest. Steam rate-limits frequent checks', select(s.autoCheckSeconds, [[0, 'Never, only with the button'], [300, 'Every 5 minutes'], [900, 'Every 15 minutes'], [1800, 'Every 30 minutes']], (v) => void set({ autoCheckSeconds: v }), 'Check interval')),
+			el('h2', { textContent: 'Clipboard' }),
+			row('Clear after copying', 'Codes and secrets', select(s.clipboardClearSeconds, [[0, 'Never'], [15, '15 seconds'], [30, '30 seconds'], [60, '1 minute']], (v) => void set({ clipboardClearSeconds: v }), 'Clear clipboard')),
+			el('h2', { textContent: 'Importing' }),
+			row('Find SDA folders automatically', 'Looks for folders named maFiles in Downloads, Desktop and Documents when the app starts', toggle(s.autoDetect, (v) => void set({ autoDetect: v }), 'Find SDA folders automatically')),
+			el('div', { class: 'setting stack' }, el('span', { class: 'setting-label', textContent: 'Watched folders' }), s.importFolders.length ? folders : el('span', { class: 'hint', textContent: 'None added.' }), el('div', { class: 'row-actions left' }, el('button', { class: 'small', textContent: 'Add folder…', onclick: async () => { const r = await api.addFolder(); if (r.ok) { applySettings(r.value); void settingsScreen(); } else toast(r.error, true); } }), el('button', { class: 'small', textContent: 'Scan now', onclick: async () => { const r = await api.rescan(); if (!r.ok) return toast(r.error, true); toast(r.value.added.length ? `Imported ${r.value.added.join(', ')}` : 'Nothing new found'); } }))),
+			el('p', { class: 'hint fine', textContent: 'New accounts are copied; existing ones are never overwritten and your originals are never changed. Passwords you choose to save, and the sign-in token, are kept in plain text (credentials.json and sessions.json) next to your maFiles.' })
+		)
+	);
+	refreshView = () => undefined;
+}
+
+// ------------------------------------------------------------------- boot --
+
+async function boot(): Promise<void> {
+	const s = await api.settings();
+	if (s.ok) applySettings(s.value);
+	else applySettings({ theme: 'system', density: 'comfortable', showSteamId: false, showAvatars: true, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false });
+	api.onChanged(() => refreshView());
+	api.onNotice((n) => {
+		toast(n.message, n.error);
+		refreshView();
+	});
+	buildShell();
+	await listScreen();
+}
+
+void boot();
