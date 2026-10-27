@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.4.0
+- New: import accounts from plain text, one per line as `username:password:shared_secret:identity_secret` (Add account, then "Import from text"). Separator can be : ; , | or tab, and the password may contain the separator. For each line the app signs in once with the password and a code made from the shared secret to find the SteamID64, creates the maFile, and saves the password and sign-in token. Lines that fail are listed with the reason; the others still import. Accounts already in the app or the trash are skipped.
+
 ## 0.3.1
 - New overview at the top of the Codes page: how many accounts you have, and how many still need a sign-in, have no saved password, no revocation code, or were never activated. Click a chip to open the To do list. When nothing is missing it says so.
 - The logo in the sidebar is bigger and no longer sits on a dark tile that vanished into the sidebar; it is aligned with the menu icons.
