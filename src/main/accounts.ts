@@ -319,12 +319,31 @@ export class Accounts {
 		return this.d.credentials.has(steamId);
 	}
 
-	/** Save a password for an account, and try it straight away if the account is waiting for one. */
-	setPassword(steamId: string, password: string): void {
-		if (!this.parsed.has(steamId)) throw new UserError('Unknown account');
+	/**
+	 * Check the password with a real sign-in before keeping it. A wrong password is
+	 * refused (and not saved). With no connection it is saved but reported as unchecked.
+	 */
+	async setPassword(steamId: string, password: string): Promise<'verified' | 'unverified'> {
+		const account = this.parsed.get(steamId);
+		if (!account) throw new UserError('Unknown account');
+		let refresh: string;
+		try {
+			refresh = await this.d.signInWithPassword(account.accountName, password, account.sharedSecret, this.d.steamNow());
+		} catch (err) {
+			if (err instanceof NetworkError) {
+				this.d.credentials.set(steamId, password);
+				this.autoSignInRetryAt.delete(steamId);
+				return 'unverified';
+			}
+			if (err instanceof UserError && /too many attempts/i.test(err.message)) this.pause(1800);
+			throw err;
+		}
 		this.d.credentials.set(steamId, password);
+		this.d.tokens.set(steamId, refresh);
+		this.dropAccess(steamId);
 		this.autoSignInRetryAt.delete(steamId);
-		if (this.status(steamId).state === 'signin') void this.refresh(steamId);
+		void this.refresh(steamId);
+		return 'verified';
 	}
 
 	clearPassword(steamId: string): void {

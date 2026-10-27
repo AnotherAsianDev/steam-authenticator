@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.3
+- Saving a password now checks it with a real sign-in first. A wrong password is refused and not saved; with no connection it is saved and marked as unchecked.
+
 ## 0.1.2
 - Cleaner layout: title, filters and cards share one left edge; the account page is grouped into cards (Copy, Open on Steam, Confirmations).
 - Code boxes line up across rows whether or not a badge is shown.

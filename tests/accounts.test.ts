@@ -130,13 +130,21 @@ describe('saved passwords', () => {
 		await accounts.refresh(ID);
 		expect(signInWithPassword).toHaveBeenCalledTimes(2);
 	});
-	it('retries at once after the password is changed', async () => {
-		const { accounts, credentials, signInWithPassword } = setup({ mintFails: true, signInFails: true });
-		credentials.set(ID, 'wrong');
-		await accounts.refresh(ID);
-		accounts.setPassword(ID, 'new-one');
-		await new Promise((r) => setTimeout(r, 20));
-		expect(signInWithPassword).toHaveBeenCalledTimes(2);
+	it('refuses a wrong password and does not save it', async () => {
+		const { accounts, credentials } = setup({ mintFails: true, signInFails: true });
+		await expect(accounts.setPassword(ID, 'wrong')).rejects.toThrow('Wrong password');
+		expect(credentials.has(ID)).toBe(false);
+	});
+	it('saves a working password, keeps the session and refreshes', async () => {
+		const { accounts, credentials, tokens } = setup({ mintFails: true });
+		await expect(accounts.setPassword(ID, 'right')).resolves.toBe('verified');
+		expect(credentials.get(ID)).toBe('right');
+		expect(tokens.get(ID)).toBe('refresh-from-signin');
+	});
+	it('saves but reports unchecked when offline', async () => {
+		const { accounts, credentials } = setup({ mintFails: true, offline: true });
+		await expect(accounts.setPassword(ID, 'maybe')).resolves.toBe('unverified');
+		expect(credentials.get(ID)).toBe('maybe');
 	});
 	it('asks for a password when none is saved, without calling Steam', async () => {
 		const { accounts, signInWithPassword } = setup({ mintFails: true });

@@ -65,7 +65,7 @@ declare const api: {
 	refresh(id: string): P<Status>;
 	act(id: string, action: 'accept' | 'deny', ids: string[]): P<Status>;
 	signIn(id: string, password: string, save: boolean): P<Status>;
-	setPassword(id: string, password: string): P<void>;
+	setPassword(id: string, password: string): P<'verified' | 'unverified'>;
 	clearPassword(id: string): P<void>;
 	import(): P<{ file: string; ok: boolean; message: string }[]>;
 	rescan(): P<{ added: string[]; folders: number }>;
@@ -576,9 +576,14 @@ async function todoScreen(): Promise<void> {
 					form.addEventListener('submit', async (e) => {
 						e.preventDefault();
 						if (!input.value.trim()) return;
+						const btn = form.querySelector<HTMLButtonElement>('button[type=submit]')!;
+						btn.disabled = true;
+						if (isPw) btn.textContent = 'Checking…';
 						const res = isPw ? await api.setPassword(it.steamId, input.value) : await api.setRevocation(it.steamId, input.value);
+						btn.disabled = false;
+						btn.textContent = 'Save';
 						if (!res.ok) return toast(res.error, true);
-						toast(isPw ? 'Password saved' : 'Revocation code saved');
+						toast(!isPw ? 'Revocation code saved' : res.value === 'verified' ? 'Password works and is saved' : 'Saved, but could not check it (no connection)');
 						await load();
 					});
 					action = form;
@@ -948,16 +953,20 @@ async function detailScreen(id: string): Promise<void> {
 			const input = el('input', { type: 'password', placeholder: 'Steam password', autocomplete: 'off' });
 			const save = el('button', { class: 'small primary', type: 'submit', textContent: 'Save' });
 			const cancel = el('button', { class: 'small', type: 'button', textContent: 'Cancel', onclick: () => { editingPassword = false; renderPw(); } });
-			const form = el('form', { class: 'pwform' }, input, el('div', { class: 'row-actions left' }, save, cancel), el('p', { class: 'hint', textContent: 'Saved in plain text on this computer (credentials.json) and used to sign in automatically.' }));
+			const form = el('form', { class: 'pwform' }, input, el('div', { class: 'row-actions left' }, save, cancel), el('p', { class: 'hint', textContent: 'Checked with a real sign-in before it is saved. Kept in plain text on this computer (credentials.json) and used to sign in automatically.' }));
 			form.addEventListener('submit', async (e) => {
 				e.preventDefault();
 				if (!input.value) return;
+				save.disabled = true;
+				save.textContent = 'Checking…';
 				const r = await api.setPassword(id, input.value);
+				save.disabled = false;
+				save.textContent = 'Save';
 				if (!r.ok) return toast(r.error, true);
 				hasPassword = true;
 				editingPassword = false;
 				renderPw();
-				toast('Password saved');
+				toast(r.value === 'verified' ? 'Password works and is saved' : 'Saved, but could not check it (no connection)');
 			});
 			pwBlock.replaceChildren(form);
 			input.focus();

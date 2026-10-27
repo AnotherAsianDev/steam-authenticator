@@ -218,8 +218,8 @@ function registerIpc(): void {
 		await accounts.signIn(id, password === undefined || password === '' ? undefined : str(password, 'password'), save === true);
 		return publicStatus(id);
 	});
-	handle('setPassword', (steamId: unknown, password: unknown) => {
-		accounts.setPassword(known(steamId), str(password, 'password'));
+	handle('setPassword', async (steamId: unknown, password: unknown) => {
+		return accounts.setPassword(known(steamId), str(password, 'password'));
 	});
 	handle('clearPassword', (steamId: unknown) => accounts.clearPassword(known(steamId)));
 

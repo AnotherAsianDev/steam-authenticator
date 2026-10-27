@@ -34,8 +34,7 @@ Minimal desktop Steam Guard authenticator (Electron + TypeScript, no UI framewor
   accept/deny all. Security-related requests (account recovery, phone change) are never included in
   "all" and must be handled one at a time.
 - **Sign-in:** needed only if the maFile has no usable session. The Steam Guard code is generated
-  from the shared secret. You can save a password per account (`credentials.json`, plain text); it is then
-  used automatically. A rejected saved password is not retried for 30 minutes (or until you change it).
+  from the shared secret. You can save a password per account (`credentials.json`, plain text). It is checked with a real sign-in when you save it (a wrong one is refused), then used automatically. A rejected saved password is not retried for 30 minutes (or until you change it).
   A refresh token is kept in `sessions.json` (plain text).
 - **Copy** username, password (if saved), shared secret, identity secret, revocation code, SteamID64.
 - **Profile pictures** from the public profile (no API key), at most once a week per account.
