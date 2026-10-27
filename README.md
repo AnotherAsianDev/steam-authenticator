@@ -101,3 +101,7 @@ The window draws its own title bar (minimize, maximize, close) in the app's colo
 ## Log
 
 The Log page shows warnings and errors with full details for troubleshooting (also saved in `data/log.jsonl`). Secrets, passwords, tokens and revocation codes are redacted before they are stored, so a log can be shared safely.
+
+---
+
+© 2026 Oscar (AnotherAsianDev). Released under the [MIT License](LICENSE). Not affiliated with or endorsed by Valve; Steam is a trademark of Valve Corporation.

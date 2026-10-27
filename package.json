@@ -4,6 +4,7 @@
   "private": true,
   "description": "Minimal desktop Steam Guard authenticator",
   "license": "MIT",
+  "author": "Oscar (AnotherAsianDev)",
   "main": "dist/main.js",
   "scripts": {
     "build": "node build.mjs",
