@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+- The title bar buttons (lock, minimize, maximize, close) work while the app is locked and while a dialog is open. The lock and dialog layers no longer count as part of the window's drag area, which was swallowing the clicks.
+- New setting "Show Steam nickname": shows the profile name instead of the login name on the list, the account page and in confirmations. The login name moves to the second line, next to the SteamID64 if that is on. Search finds both. The name comes from the same public profile lookup as the pictures, so it costs no extra requests, and it is kept in `data/avatars/names.json`.
+
 ## 0.2.1
 - The padlock moved to the title bar, next to minimize (shown once a master password exists; closed and blue while locked). The sidebar is tidier.
 - Settings now has a gear icon instead of a sun.

@@ -6,6 +6,8 @@ export interface Settings {
 	density: 'comfortable' | 'compact';
 	showSteamId: boolean;
 	showAvatars: boolean;
+	/** Show the Steam profile name instead of the login name; the login name moves to the second line. */
+	showNickname: boolean;
 	/** How often pending confirmations are checked in the background. 0 = only when asked. */
 	autoCheckSeconds: 0 | 300 | 900 | 1800;
 	/** Check confirmations once when the app starts. */
@@ -28,6 +30,7 @@ export const DEFAULTS: Settings = {
 	density: 'comfortable',
 	showSteamId: false,
 	showAvatars: true,
+	showNickname: false,
 	autoCheckSeconds: 0,
 	checkOnStartup: true,
 	clipboardClearSeconds: 30,
@@ -50,6 +53,7 @@ export function sanitize(input: unknown): Settings {
 		density: oneOf(o['density'], ['comfortable', 'compact'] as const, DEFAULTS.density),
 		showSteamId: typeof o['showSteamId'] === 'boolean' ? o['showSteamId'] : DEFAULTS.showSteamId,
 		showAvatars: typeof o['showAvatars'] === 'boolean' ? o['showAvatars'] : DEFAULTS.showAvatars,
+		showNickname: typeof o['showNickname'] === 'boolean' ? o['showNickname'] : DEFAULTS.showNickname,
 		autoCheckSeconds: oneOf(o['autoCheckSeconds'], [0, 300, 900, 1800] as const, DEFAULTS.autoCheckSeconds),
 		checkOnStartup: typeof o['checkOnStartup'] === 'boolean' ? o['checkOnStartup'] : DEFAULTS.checkOnStartup,
 		clipboardClearSeconds: oneOf(o['clipboardClearSeconds'], [0, 15, 30, 60] as const, DEFAULTS.clipboardClearSeconds),

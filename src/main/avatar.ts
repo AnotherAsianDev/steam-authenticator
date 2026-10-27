@@ -25,6 +25,14 @@ export function extractAvatarUrl(xml: string): string | undefined {
 	}
 }
 
+/** The profile name ("nickname") from the same public profile XML, cleaned for display. */
+export function extractPersonaName(xml: string): string | undefined {
+	const m = /<steamID>\s*(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?\s*<\/steamID>/.exec(xml);
+	// eslint-disable-next-line no-control-regex
+	const name = m?.[1]?.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 64);
+	return name || undefined;
+}
+
 export class AvatarCache {
 	private failed = new Map<string, number>();
 	private queue: Promise<void> = Promise.resolve();
@@ -32,12 +40,30 @@ export class AvatarCache {
 	/** The list asks every second; the disk is only looked at every few minutes per account. */
 	private checkedAt = new Map<string, number>();
 	private onDisk = new Set<string>();
+	private names: Record<string, string> = {};
 
 	constructor(
 		private readonly dir: string,
 		private readonly onUpdate: () => void = () => undefined,
 		private readonly profileBase = 'https://steamcommunity.com/profiles'
-	) {}
+	) {
+		try {
+			const raw = JSON.parse(readFileSync(join(dir, 'names.json'), 'utf8')) as Record<string, unknown>;
+			for (const [id, n] of Object.entries(raw)) if (typeof n === 'string') this.names[id] = n;
+		} catch {
+			/* no names yet */
+		}
+	}
+
+	/** Look again soon, for example after a setting that needs the profile was turned on. */
+	recheck(): void {
+		this.checkedAt.clear();
+	}
+
+	/** The profile name, once it has been fetched. */
+	nickname(steamId: string): string | undefined {
+		return this.names[steamId];
+	}
 
 	private file(steamId: string): string {
 		return join(this.dir, `${steamId}.jpg`);
@@ -67,7 +93,7 @@ export class AvatarCache {
 		this.checkedAt.set(steamId, now);
 		const f = this.file(steamId);
 		try {
-			if (existsSync(f) && Date.now() - statSync(f).mtimeMs < MAX_AGE_MS) return;
+			if (existsSync(f) && this.names[steamId] !== undefined && Date.now() - statSync(f).mtimeMs < MAX_AGE_MS) return;
 		} catch {
 			/* treat as missing */
 		}
@@ -83,6 +109,13 @@ export class AvatarCache {
 	private async download(steamId: string): Promise<void> {
 		try {
 			const xml = await fetch(`${this.profileBase}/${steamId}/?xml=1`, { signal: AbortSignal.timeout(10_000) }).then((r) => r.text());
+			const name = extractPersonaName(xml);
+			if (name && name !== this.names[steamId]) {
+				this.names[steamId] = name;
+				mkdirSync(this.dir, { recursive: true });
+				writeFileSync(join(this.dir, 'names.json'), JSON.stringify(this.names));
+				this.onUpdate();
+			}
 			const url = extractAvatarUrl(xml);
 			if (!url) throw new Error('no avatar');
 			const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });

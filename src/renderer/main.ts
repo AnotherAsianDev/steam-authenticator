@@ -1,6 +1,7 @@
 interface Row {
 	steamId: string;
 	name: string;
+	nickname: string | null;
 	code: string;
 	remaining: number;
 	hasAvatar: boolean;
@@ -28,6 +29,7 @@ interface Settings {
 	density: 'comfortable' | 'compact';
 	showSteamId: boolean;
 	showAvatars: boolean;
+	showNickname: boolean;
 	autoCheckSeconds: number;
 	checkOnStartup: boolean;
 	clipboardClearSeconds: number;
@@ -81,7 +83,7 @@ declare const api: {
 	avatar(id: string): P<string | null>;
 	copyCode(id: string): P<void>;
 	copyField(id: string, field: string): P<void>;
-	detail(id: string): P<{ steamId: string; name: string; hasRevocation: boolean; hasPassword: boolean }>;
+	detail(id: string): P<{ steamId: string; name: string; nickname: string | null; hasRevocation: boolean; hasPassword: boolean }>;
 	confirmations(id: string): P<Status>;
 	refresh(id: string): P<Status>;
 	act(id: string, action: 'accept' | 'deny', ids: string[]): P<Status>;
@@ -110,7 +112,7 @@ declare const api: {
 	exportCheck(ids: string[], fields: string[], d: string, skip: boolean): P<{ count: number; skipped: number; conflicts: number }>;
 	exportCopy(ids: string[], fields: string[], d: string, skip: boolean): P<number>;
 	exportSave(ids: string[], fields: string[], d: string, skip: boolean): P<{ count: number; path: string } | null>;
-	allConfirmations(): P<(Status & { steamId: string; name: string })[]>;
+	allConfirmations(): P<(Status & { steamId: string; name: string; nickname: string | null })[]>;
 	enrollState(): P<EnrollState>;
 	enrollReset(): P<EnrollState>;
 	enrollBegin(name: string, password: string, save: boolean): P<EnrollState>;
@@ -300,6 +302,14 @@ async function loadAvatar(id: string, into: HTMLElement): Promise<void> {
 		}
 	}
 	if (url) into.replaceChildren(el('img', { src: url, alt: '' }));
+}
+
+/** What to call an account: the Steam profile name if that is turned on and known, else the login name. */
+const accountLabel = (name: string, nickname: string | null | undefined): string => (settings.showNickname && nickname ? nickname : name);
+/** Second line under a name: the login name when a nickname is shown, then the SteamID64 if wanted. */
+function accountSubline(name: string, nickname: string | null | undefined, steamId: string): string {
+	const login = settings.showNickname && nickname && nickname !== name ? name : '';
+	return [login, settings.showSteamId ? steamId : ''].filter(Boolean).join(' · ');
 }
 
 function avatarBox(name: string, id: string, hasAvatar: boolean, size: 'sm' | 'lg'): HTMLElement {
@@ -641,13 +651,14 @@ async function listScreen(): Promise<void> {
 			slot.replaceChildren(settings.showAvatars ? avatarBox(row.name, row.steamId, row.hasAvatar, 'sm') : '');
 			slot.hidden = !settings.showAvatars;
 		}
-		li.querySelector('.name')!.textContent = row.name;
-		li.dataset['name'] = row.name.toLowerCase();
+		li.querySelector('.name')!.textContent = accountLabel(row.name, row.nickname);
+		li.dataset['name'] = `${row.name} ${row.nickname ?? ''}`.toLowerCase();
 		li.dataset['state'] = row.state;
 		li.dataset['pending'] = String(row.pending ?? 0);
 		const sid = li.querySelector<HTMLElement>('.sid')!;
-		sid.textContent = settings.showSteamId ? row.steamId : '';
-		sid.hidden = !settings.showSteamId;
+		const sub = accountSubline(row.name, row.nickname, row.steamId);
+		sid.textContent = sub;
+		sid.hidden = !sub;
 		li.querySelector('.code')!.textContent = row.code;
 
 		const badge = li.querySelector<HTMLButtonElement>('.badge')!;
@@ -689,7 +700,7 @@ async function confirmsScreen(): Promise<void> {
 		el('div', { class: 'actions' }, el('button', { class: 'icon', title: 'Check all accounts now', ariaLabel: 'Check all accounts now', textContent: '↻', onclick: () => { void api.refreshAll(); } }))
 	);
 	show(header, strip.node, body);
-	let data: (Status & { steamId: string; name: string })[] = [];
+	let data: (Status & { steamId: string; name: string; nickname: string | null })[] = [];
 	const search = el('input', { type: 'text', class: 'search', placeholder: 'Filter by account or text', value: query, ariaLabel: 'Filter confirmations', spellcheck: false });
 	const typeSel = el('select', { ariaLabel: 'Type' });
 	const list = el('div', { class: 'groups' });
@@ -713,8 +724,8 @@ async function confirmsScreen(): Promise<void> {
 		const groups: HTMLElement[] = [];
 		let total = 0;
 		for (const a of data) {
-			const items = a.items.filter((i) => (confirmType === 'all' || i.typeName === confirmType) && (!q || `${a.name} ${i.headline} ${i.summary.join(' ')}`.toLowerCase().includes(q)));
-			const nameMatch = !q || a.name.toLowerCase().includes(q);
+			const items = a.items.filter((i) => (confirmType === 'all' || i.typeName === confirmType) && (!q || `${a.name} ${a.nickname ?? ''} ${i.headline} ${i.summary.join(' ')}`.toLowerCase().includes(q)));
+			const nameMatch = !q || `${a.name} ${a.nickname ?? ''}`.toLowerCase().includes(q);
 			const note =
 				a.state === 'signin' ? 'Sign in needed' : a.state === 'error' ? (a.message ?? 'Could not check') : a.state === 'loading' || a.state === 'idle' ? 'Checking…' : '';
 			if (!items.length && !(note && nameMatch && confirmType === 'all')) continue;
@@ -722,7 +733,7 @@ async function confirmsScreen(): Promise<void> {
 			const head = el(
 				'div',
 				{ class: 'group-head' },
-				profileLink(a.steamId, a.name, 'name'),
+				profileLink(a.steamId, accountLabel(a.name, a.nickname), 'name'),
 				note ? el('button', { class: 'badge warn', type: 'button', textContent: note, onclick: () => void navigate({ name: 'detail', id: a.steamId }) }) : el('span', { class: 'hint', textContent: `${items.length}` })
 			);
 			const ul = el('ul', { class: 'items' }, ...items.map((it) => {
@@ -1325,10 +1336,13 @@ async function detailScreen(id: string): Promise<void> {
 		}
 	}
 	renderPw();
-	const sidLine = settings.showSteamId
-		? el('button', { class: 'sidcopy', type: 'button', title: 'Copy SteamID64', textContent: d.value.steamId, onclick: async () => { await api.copyField(id, 'steamId'); toast('SteamID64 copied'); } })
-		: '';
-	const profile = el('div', { class: 'profile' }, avatarBox(d.value.name, id, true, 'lg'), el('div', { class: 'who' }, profileLink(id, d.value.name, 'name big'), sidLine));
+	const sub = accountSubline(d.value.name, d.value.nickname, d.value.steamId);
+	const sidLine = !sub
+		? ''
+		: settings.showSteamId
+			? el('button', { class: 'sidcopy', type: 'button', title: 'Copy SteamID64', textContent: sub, onclick: async () => { await api.copyField(id, 'steamId'); toast('SteamID64 copied'); } })
+			: el('span', { class: 'sid shown', textContent: sub });
+	const profile = el('div', { class: 'profile' }, avatarBox(d.value.name, id, true, 'lg'), el('div', { class: 'who' }, profileLink(id, accountLabel(d.value.name, d.value.nickname), 'name big'), sidLine));
 
 	const body = el('div', { class: 'conf' });
 	const refreshBtn = el('button', { class: 'icon', title: 'Check now', ariaLabel: 'Check for confirmations', textContent: '↻', onclick: async () => {
@@ -1611,6 +1625,7 @@ async function settingsScreen(): Promise<void> {
 			el('h2', { textContent: 'Appearance' }),
 			row('Theme', '', select(s.theme, [['system', 'System'], ['dark', 'Dark'], ['light', 'Light']], (v) => void set({ theme: v }), 'Theme')),
 			row('Density', '', select(s.density, [['comfortable', 'Comfortable'], ['compact', 'Compact']], (v) => void set({ density: v }), 'Density')),
+			row('Show Steam nickname', 'Instead of the login name, which then appears under it. Taken from the public profile', toggle(s.showNickname, (v) => void set({ showNickname: v }), 'Show Steam nickname')),
 			row('Show SteamID64', 'Under each account name', toggle(s.showSteamId, (v) => void set({ showSteamId: v }), 'Show SteamID64')),
 			row('Show profile pictures', 'Fetched from the public profile, at most once a week per account', toggle(s.showAvatars, (v) => void set({ showAvatars: v }), 'Show profile pictures')),
 			el('h2', { textContent: 'Confirmations' }),
@@ -1636,7 +1651,7 @@ async function settingsScreen(): Promise<void> {
 async function boot(): Promise<void> {
 	const s = await api.settings();
 	if (s.ok) applySettings(s.value);
-	else applySettings({ theme: 'system', density: 'comfortable', showSteamId: false, showAvatars: true, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false });
+	else applySettings({ theme: 'system', density: 'comfortable', showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false });
 	api.onChanged(() => refreshView());
 	api.onLogChanged(() => {
 		void updateLogCount();

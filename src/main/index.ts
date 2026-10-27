@@ -221,16 +221,18 @@ function registerIpc(): void {
 		await Promise.race([clockReady, new Promise((r) => setTimeout(r, 1500))]);
 		const t = steamNow();
 		const showAvatars = settings.get().showAvatars;
+		const wantProfiles = showAvatars || settings.get().showNickname;
 		return accounts.ids().map((steamId) => {
 			const a = accounts.get(steamId)!;
 			const st = accounts.status(steamId);
-			if (showAvatars) avatars.ensure(steamId);
+			if (wantProfiles) avatars.ensure(steamId);
 			return {
 				steamId,
 				name: a.accountName,
 				code: generateCode(a.sharedSecret, t),
 				remaining: secondsRemaining(t),
 				hasAvatar: showAvatars && avatars.has(steamId),
+				nickname: avatars.nickname(steamId) ?? null,
 				state: st.state,
 				pending: st.state === 'ok' ? st.items.length : null
 			};
@@ -259,7 +261,7 @@ function registerIpc(): void {
 	});
 	handle('detail', (steamId: unknown) => {
 		const a = accounts.get(known(steamId))!;
-		return { steamId: a.steamId, name: a.accountName, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId) };
+		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId) };
 	});
 
 	handle('confirmations', (steamId: unknown) => publicStatus(known(steamId)));
@@ -431,6 +433,7 @@ function registerIpc(): void {
 		accounts.ids().map((steamId) => ({
 			steamId,
 			name: accounts.get(steamId)!.accountName,
+			nickname: avatars.nickname(steamId) ?? null,
 			...publicStatus(steamId)
 		}))
 	);
@@ -550,6 +553,7 @@ function registerIpc(): void {
 	handle('settings', () => settings.get());
 	handle('setSettings', (patch: unknown) => {
 		const next = settings.update(patch);
+		avatars.recheck();
 		schedulePolling();
 		watchFolders(externalFolders());
 		return next;
