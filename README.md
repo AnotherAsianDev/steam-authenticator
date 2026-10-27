@@ -104,4 +104,4 @@ The Log page shows warnings and errors with full details for troubleshooting (al
 
 ---
 
-© 2026 Oscar (AnotherAsianDev). Released under the [MIT License](LICENSE). Not affiliated with or endorsed by Valve; Steam is a trademark of Valve Corporation.
+© 2026 github.com/AnotherAsianDev. Released under the [MIT License](LICENSE). Not affiliated with or endorsed by Valve; Steam is a trademark of Valve Corporation.
