@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.4.1
+- Importing with secrets now has two modes: "One account" with a field for each value (username, password, shared_secret, identity_secret, and an optional revocation code that ends up in the maFile) and a message that names the field that is wrong, and "Several accounts" for pasted lines. The button on Add account is now "Import with secrets…".
+
 ## 0.4.0
 - New: import accounts from plain text, one per line as `username:password:shared_secret:identity_secret` (Add account, then "Import from text"). Separator can be : ; , | or tab, and the password may contain the separator. For each line the app signs in once with the password and a code made from the shared secret to find the SteamID64, creates the maFile, and saves the password and sign-in token. Lines that fail are listed with the reason; the others still import. Accounts already in the app or the trash are skipped.
 
