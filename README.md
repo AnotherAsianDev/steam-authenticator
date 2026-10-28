@@ -17,6 +17,10 @@ A lean desktop Steam Guard authenticator for Windows. Plain maFiles next to the 
 <td width="50%"><img src="docs/screenshots/add.png" alt="Add account"><br><sub>Add an authenticator to an account that has none</sub></td>
 <td width="50%"><img src="docs/screenshots/trash.png" alt="Trash"><br><sub>Removed accounts wait in the Trash and can be restored</sub></td>
 </tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/import.png" alt="Import with secrets"><br><sub>Import an account from its username, password and secrets (one or many)</sub></td>
+<td width="50%"><img src="docs/screenshots/lock.png" alt="Lock screen"><br><sub>Optional master password and per-PC PIN for saved passwords</sub></td>
+</tr>
 </table>
 
 *Screenshots use made-up accounts.*
