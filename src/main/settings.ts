@@ -10,6 +10,8 @@ export type Layout = (typeof LAYOUT_OPTIONS)[number];
 export interface Settings {
 	theme: 'system' | 'dark' | 'light';
 	density: 'comfortable' | 'compact';
+	/** The side menu shows only icons. */
+	sidebarCollapsed: boolean;
 	showSteamId: boolean;
 	showAvatars: boolean;
 	/** Show the Steam profile name instead of the login name; the login name moves to the second line. */
@@ -42,6 +44,7 @@ export interface Settings {
 export const DEFAULTS: Settings = {
 	theme: 'system',
 	density: 'comfortable',
+	sidebarCollapsed: true,
 	showSteamId: false,
 	showAvatars: true,
 	showNickname: false,
@@ -69,6 +72,7 @@ export function sanitize(input: unknown): Settings {
 	return {
 		theme: oneOf(o['theme'], ['system', 'dark', 'light'] as const, DEFAULTS.theme),
 		density: oneOf(o['density'], ['comfortable', 'compact'] as const, DEFAULTS.density),
+		sidebarCollapsed: typeof o['sidebarCollapsed'] === 'boolean' ? o['sidebarCollapsed'] : DEFAULTS.sidebarCollapsed,
 		showSteamId: typeof o['showSteamId'] === 'boolean' ? o['showSteamId'] : DEFAULTS.showSteamId,
 		showAvatars: typeof o['showAvatars'] === 'boolean' ? o['showAvatars'] : DEFAULTS.showAvatars,
 		showNickname: typeof o['showNickname'] === 'boolean' ? o['showNickname'] : DEFAULTS.showNickname,

@@ -31,6 +31,7 @@ interface Status {
 interface Settings {
 	theme: 'system' | 'dark' | 'light';
 	density: 'comfortable' | 'compact';
+	sidebarCollapsed: boolean;
 	showSteamId: boolean;
 	showAvatars: boolean;
 	showNickname: boolean;
@@ -219,6 +220,7 @@ const ICONS: Record<string, string> = {
 	add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
 	settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
 	log: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+	collapse: '<path d="m13 7 5 5-5 5M6 7l5 5-5 5"/>',
 	lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 	trash: '<path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3"/>',
 	folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'
@@ -286,10 +288,18 @@ function buildShell(): void {
 			item('folder', 'Storage folder', () => void api.reveal()),
 			item('trash', 'Trash', () => void navigate({ name: 'trash' })),
 			item('log', 'Log', () => void navigate({ name: 'log' }), true),
-			item('settings', 'Settings', () => void navigate({ name: 'settings' }))
+			item('settings', 'Settings', () => void navigate({ name: 'settings' })),
+			(() => {
+				const b = el('button', { class: 'nav collapse', type: 'button', onclick: async () => {
+					const r = await api.setSettings({ sidebarCollapsed: !settings.sidebarCollapsed });
+					if (r.ok) applySettings(r.value);
+				} }, icon('collapse'), el('span', { class: 'label', textContent: 'Collapse' }));
+				return b;
+			})()
 		)
 	);
-	root.replaceChildren(el('div', { class: 'shell' }, side, el('div', { class: 'pane' }, titleBar(), content)));
+	root.replaceChildren(el('div', { class: `shell${settings.sidebarCollapsed ? ' collapsed' : ''}` }, side, el('div', { class: 'pane' }, titleBar(), content)));
+	applySettings(settings);
 }
 function setNav(): void {
 	const active = view.name === 'list' || view.name === 'detail' ? 'codes' : view.name;
@@ -344,6 +354,14 @@ function applySettings(s: Settings): void {
 	if (s.theme === 'system') delete document.documentElement.dataset['theme'];
 	else document.documentElement.dataset['theme'] = s.theme;
 	document.body.classList.toggle('compact', s.density === 'compact');
+	document.querySelector('.shell')?.classList.toggle('collapsed', s.sidebarCollapsed);
+	const t = document.querySelector<HTMLElement>('.nav.collapse');
+	if (t) {
+		t.title = s.sidebarCollapsed ? 'Expand the menu' : 'Collapse the menu';
+		t.setAttribute('aria-label', t.title);
+		t.querySelector('.label')!.textContent = 'Collapse';
+		t.querySelector('svg')?.style.setProperty('transform', s.sidebarCollapsed ? 'none' : 'rotate(180deg)');
+	}
 }
 
 function ago(unix?: number): string {
@@ -1958,7 +1976,7 @@ async function settingsScreen(): Promise<void> {
 async function boot(): Promise<void> {
 	const s = await api.settings();
 	if (s.ok) applySettings(s.value);
-	else applySettings({ theme: 'system', density: 'comfortable', showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false, checkUpdates: true, sortBy: 'added-asc', layout: 'list', updateDismissed: '' });
+	else applySettings({ theme: 'system', density: 'comfortable', sidebarCollapsed: true, showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false, checkUpdates: true, sortBy: 'added-asc', layout: 'list', updateDismissed: '' });
 	api.onChanged(() => refreshView());
 	api.onLogChanged(() => {
 		void updateLogCount();

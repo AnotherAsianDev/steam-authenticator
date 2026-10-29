@@ -430,3 +430,30 @@ label.f .hint.fine { margin: 0; font-size: 12px; }
 
 .filter-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .filterbar select.sort { width: auto; font-size: 13px; padding: 5px 10px; border-radius: 999px; color: var(--muted); }
+
+/* compact design */
+:root { --gutter: max(20px, calc((100% - 880px) / 2)); }
+.shell { transition: grid-template-columns 0.15s; }
+.shell.collapsed { grid-template-columns: 60px 1fr; }
+.shell.collapsed .sidebar { padding: 14px 8px; }
+.shell.collapsed .sidebar .label, .shell.collapsed .brand > :not(:first-child) { display: none; }
+.shell.collapsed .brand { justify-content: center; padding: 6px 0 14px; }
+.shell.collapsed .nav { justify-content: center; padding: 10px 0; position: relative; border-radius: 10px; }
+.shell.collapsed .nav .count { position: absolute; top: 2px; right: 4px; padding: 0 5px; font-size: 10px; }
+.nav.collapse svg { transition: transform 0.15s; }
+.nav { padding-top: 10px; padding-bottom: 10px; }
+.title { font-size: 19px; }
+header { padding-top: 10px; padding-bottom: 6px; }
+.overview { padding: 8px 14px; }
+.list { gap: 6px; }
+.row { padding: 8px 12px 10px 12px; border-radius: 12px; gap: 0 12px; }
+.avatar.sm { width: 32px; height: 32px; border-radius: 8px; font-size: 12px; }
+.code { font-size: 19px; padding: 4px 12px; border-radius: 8px; letter-spacing: 0.12em; }
+.bar { margin-top: 7px; height: 2px; }
+.name { font-size: 14px; }
+.sid, .note { font-size: 11px; }
+.filterbar { gap: 6px; margin: 2px 0 8px; }
+input[type='text'] { padding: 6px 12px; font-size: 14px; }
+.list.grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.list.grid .row { padding: 10px 10px 12px; gap: 6px 8px; }
+.list.grid .code { font-size: 20px; }
