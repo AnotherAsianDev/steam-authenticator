@@ -364,7 +364,7 @@ async function loadAvatar(id: string, into: HTMLElement): Promise<void> {
 const accountLabel = (name: string, nickname: string | null | undefined): string => (settings.showNickname && nickname ? nickname : name);
 /** Second line under a name: the login name when a nickname is shown, then the SteamID64 if wanted. */
 function accountSubline(name: string, nickname: string | null | undefined, steamId: string): string {
-	const login = settings.showNickname && nickname && nickname !== name ? name : '';
+	const login = settings.showNickname && nickname ? name : '';
 	return [login, settings.showSteamId ? steamId : ''].filter(Boolean).join(' · ');
 }
 
