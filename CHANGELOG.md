@@ -15,7 +15,7 @@
 - Ban check: the public profile page that is already read for the name and picture also says whether an account has a VAC ban or a trade ban. Such accounts get a red tag in the list, a "banned" chip in the overview, a section on the account page and a line in the Health check, and a new ban is reported as soon as it is seen. Profiles are now read about every 12 hours per account instead of weekly (one request each, the picture only when it changed). Turn it off with Settings, Watch for bans. Community bans and game bans are not part of that page; see the notes.
 - Export, Codes and the account page: pinned accounts first, as before.
 - Cleanup: the stylesheet's account-list rules are now one section instead of layered overrides; ban texts live in one place; removed the Density setting (the design is compact now), unused code and imports, and merged the profile name and picture address files into one `data/avatars/profiles.json` (older files are read once and carried over). The build now fails on unused code.
-- Fixed the star overlapping the details arrow in the grid layout.
+- Grid layout: roomier cards; name and login name stay together, status icons sit on their own line below them. Fixed the star overlapping the details arrow.
 
 ## 0.8.0
 - Pin accounts: a star on each account keeps it at the top of the Codes page, the Confirmations page and the Export list, whatever the sort.
