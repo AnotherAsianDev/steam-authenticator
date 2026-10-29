@@ -7,6 +7,8 @@ interface Row {
 	code: string;
 	remaining: number;
 	hasAvatar: boolean;
+	pinned: boolean;
+	note: string;
 	state: 'idle' | 'loading' | 'ok' | 'signin' | 'error';
 	pending: number | null;
 }
@@ -62,6 +64,7 @@ interface Sortable {
 	nickname: string | null;
 	addedAt: number;
 	pending: number | null;
+	pinned?: boolean;
 }
 /** The account order chosen in the list, also used for the export. Returns a new array. */
 function sortAccounts<T extends Sortable>(rows: T[]): T[] {
@@ -69,6 +72,7 @@ function sortAccounts<T extends Sortable>(rows: T[]): T[] {
 	const byName = (a: Sortable, b: Sortable): number => label(a).localeCompare(label(b), undefined, { numeric: true }) || a.steamId.localeCompare(b.steamId);
 	const by = settings.sortBy;
 	return [...rows].sort((a, b) => {
+		if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
 		if (by === 'added-asc') return a.addedAt - b.addedAt || byName(a, b);
 		if (by === 'added-desc') return b.addedAt - a.addedAt || byName(a, b);
 		if (by === 'name-asc') return byName(a, b);
@@ -112,7 +116,9 @@ declare const api: {
 	avatar(id: string): P<string | null>;
 	copyCode(id: string): P<void>;
 	copyField(id: string, field: string): P<void>;
-	detail(id: string): P<{ steamId: string; name: string; nickname: string | null; hasRevocation: boolean; hasPassword: boolean }>;
+	detail(id: string): P<{ steamId: string; name: string; nickname: string | null; hasRevocation: boolean; hasPassword: boolean; pinned: boolean; note: string }>;
+	setMeta(id: string, patch: { pinned?: boolean; note?: string }): P<{ pinned: boolean; note: string }>;
+	healthCheck(): P<{ skew: number; rows: { steamId: string; name: string; nickname: string | null; level: 'ok' | 'warn' | 'bad'; issues: string[] }[] }>;
 	confirmations(id: string): P<Status>;
 	refresh(id: string): P<Status>;
 	act(id: string, action: 'accept' | 'deny', ids: string[]): P<Status>;
@@ -140,11 +146,11 @@ declare const api: {
 	todo(): P<TodoItem[]>;
 	todoIgnore(id: string, kind: string): P<Settings>;
 	setRevocation(id: string, code: string): P<void>;
-	exportInfo(): P<{ steamId: string; name: string; nickname: string | null; addedAt: number; pending: number | null; hasPassword: boolean; hasRevocation: boolean }[]>;
+	exportInfo(): P<{ steamId: string; name: string; nickname: string | null; addedAt: number; pending: number | null; pinned: boolean; note: string; hasPassword: boolean; hasRevocation: boolean }[]>;
 	exportCheck(ids: string[], fields: string[], d: string, skip: boolean): P<{ count: number; skipped: number; conflicts: number }>;
 	exportCopy(ids: string[], fields: string[], d: string, skip: boolean): P<number>;
 	exportSave(ids: string[], fields: string[], d: string, skip: boolean): P<{ count: number; path: string } | null>;
-	allConfirmations(): P<(Status & { steamId: string; name: string; nickname: string | null })[]>;
+	allConfirmations(): P<(Status & { steamId: string; name: string; nickname: string | null; pinned: boolean })[]>;
 	enrollState(): P<EnrollState>;
 	enrollReset(): P<EnrollState>;
 	importLines(text: string, separator: string): P<{ label: string; ok: boolean; message: string }[]>;
@@ -748,11 +754,17 @@ async function listScreen(): Promise<void> {
 		const badge = el('button', { class: 'badge', type: 'button', hidden: true, onclick: () => void navigate({ name: 'detail', id: row.steamId }) });
 		const open = el('button', { class: 'icon more', title: 'Details and confirmations', ariaLabel: `Details for ${row.name}`, textContent: '›', onclick: () => void navigate({ name: 'detail', id: row.steamId }) });
 		const code = el('button', { class: 'code', type: 'button', title: 'Click to copy', onclick: () => void copy() });
+		const star = el('button', { class: 'icon star', type: 'button', onclick: async () => {
+			const r = await api.setMeta(row.steamId, { pinned: li.dataset['pinned'] !== '1' });
+			if (!r.ok) return toast(r.error, true);
+			await refresh();
+		} });
 		li.append(
 			el('span', { class: 'avatar-slot' }),
-			el('span', { class: 'who' }, profileLink(row.steamId, row.name, 'name'), el('span', { class: 'sid' })),
+			el('span', { class: 'who' }, profileLink(row.steamId, row.name, 'name'), el('span', { class: 'sid' }), el('span', { class: 'note' })),
 			badge,
 			code,
+			star,
 			open,
 			el('span', { class: 'bar' }, el('i'))
 		);
@@ -768,7 +780,16 @@ async function listScreen(): Promise<void> {
 			slot.hidden = !settings.showAvatars;
 		}
 		li.querySelector('.name')!.textContent = accountLabel(row.name, row.nickname);
-		li.dataset['name'] = `${row.name} ${row.nickname ?? ''}`.toLowerCase();
+		li.dataset['name'] = `${row.name} ${row.nickname ?? ''} ${row.note}`.toLowerCase();
+		li.dataset['pinned'] = row.pinned ? '1' : '0';
+		const starBtn = li.querySelector<HTMLButtonElement>('.star')!;
+		starBtn.textContent = row.pinned ? '★' : '☆';
+		starBtn.classList.toggle('on', row.pinned);
+		starBtn.title = row.pinned ? 'Unpin' : 'Pin to the top';
+		starBtn.ariaLabel = `${row.pinned ? 'Unpin' : 'Pin'} ${row.name}`;
+		const noteEl = li.querySelector<HTMLElement>('.note')!;
+		noteEl.textContent = row.note;
+		noteEl.hidden = !row.note;
 		li.dataset['state'] = row.state;
 		li.dataset['pending'] = String(row.pending ?? 0);
 		const sid = li.querySelector<HTMLElement>('.sid')!;
@@ -816,7 +837,7 @@ async function confirmsScreen(): Promise<void> {
 		el('div', { class: 'actions' }, el('button', { class: 'icon', title: 'Check all accounts now', ariaLabel: 'Check all accounts now', textContent: '↻', onclick: () => { void api.refreshAll(); } }))
 	);
 	show(header, strip.node, body);
-	let data: (Status & { steamId: string; name: string; nickname: string | null })[] = [];
+	let data: (Status & { steamId: string; name: string; nickname: string | null; pinned: boolean })[] = [];
 	const search = el('input', { type: 'text', class: 'search', placeholder: 'Filter by account or text', value: query, ariaLabel: 'Filter confirmations', spellcheck: false });
 	const typeSel = el('select', { ariaLabel: 'Type' });
 	const list = el('div', { class: 'groups' });
@@ -828,6 +849,22 @@ async function confirmsScreen(): Promise<void> {
 	async function act(steamId: string, action: 'accept' | 'deny', id: string): Promise<void> {
 		const r = await api.act(steamId, action, [id]);
 		toast(r.ok ? (action === 'accept' ? 'Accepted' : 'Denied') : r.error, !r.ok);
+		await load();
+	}
+
+	/** Everything shown for one account at once. Security-critical items are never part of it. */
+	async function actMany(steamId: string, action: 'accept' | 'deny', ids: string[]): Promise<void> {
+		let done = 0;
+		for (let i = 0; i < ids.length; i += 50) {
+			const chunk = ids.slice(i, i + 50);
+			const r = await api.act(steamId, action, chunk);
+			if (!r.ok) {
+				toast(done ? `${done} done, then: ${r.error}` : r.error, true);
+				return void (await load());
+			}
+			done += chunk.length;
+		}
+		toast(`${done} ${action === 'accept' ? 'accepted' : 'denied'}`);
 		await load();
 	}
 
@@ -852,6 +889,12 @@ async function confirmsScreen(): Promise<void> {
 				profileLink(a.steamId, accountLabel(a.name, a.nickname), 'name'),
 				note ? el('button', { class: 'badge warn', type: 'button', textContent: note, onclick: () => void navigate({ name: 'detail', id: a.steamId }) }) : el('span', { class: 'hint', textContent: `${items.length}` })
 			);
+			const bulk = items.filter((i) => !i.critical);
+			if (bulk.length > 1) {
+				head.append(el('span', { class: 'bulk' },
+					confirmButton(`Accept all ${bulk.length}`, 'Click again to accept all', 'small primary', () => void actMany(a.steamId, 'accept', bulk.map((i) => i.id))),
+					confirmButton(`Deny all ${bulk.length}`, 'Click again to deny all', 'small danger', () => void actMany(a.steamId, 'deny', bulk.map((i) => i.id)))));
+			}
 			const ul = el('ul', { class: 'items' }, ...items.map((it) => {
 				const actions = it.critical
 					? el('div', { class: 'item-actions' }, el('span', { class: 'item-warn', textContent: 'Security critical, review it on the account page' }), el('button', { class: 'small', type: 'button', textContent: 'Open', onclick: () => void navigate({ name: 'detail', id: a.steamId }) }))
@@ -873,7 +916,7 @@ async function confirmsScreen(): Promise<void> {
 	async function load(): Promise<void> {
 		const r = await api.allConfirmations();
 		if (!r.ok) return toast(r.error, true);
-		data = r.value;
+		data = [...r.value].sort((a, b) => Number(b.pinned) - Number(a.pinned));
 		pendingTotal = data.reduce((n, a) => n + (a.state === 'ok' ? a.items.length : 0), 0);
 		setTabCount();
 		draw();
@@ -1561,6 +1604,30 @@ async function detailScreen(id: string): Promise<void> {
 			: el('span', { class: 'sid shown', textContent: sub });
 	const profile = el('div', { class: 'profile' }, avatarBox(d.value.name, id, true, 'lg'), el('div', { class: 'who' }, profileLink(id, accountLabel(d.value.name, d.value.nickname), 'name big'), sidLine));
 
+	const noteInput = el('input', { type: 'text', class: 'search', maxLength: 120, placeholder: 'A short note, for example "trade alt"', value: d.value.note, ariaLabel: 'Note', spellcheck: false });
+	let pinned = d.value.pinned;
+	const pinBtn = el('button', { class: 'chip', type: 'button' });
+	const drawPin = (): void => { pinBtn.textContent = pinned ? '★ Pinned to the top' : '☆ Pin to the top'; };
+	drawPin();
+	pinBtn.addEventListener('click', async () => {
+		const r = await api.setMeta(id, { pinned: !pinned });
+		if (!r.ok) return toast(r.error, true);
+		pinned = r.value.pinned;
+		drawPin();
+	});
+	let savedNote = d.value.note;
+	const saveNote = async (): Promise<void> => {
+		if (noteInput.value.trim() === savedNote) return;
+		const r = await api.setMeta(id, { note: noteInput.value });
+		if (!r.ok) return toast(r.error, true);
+		savedNote = r.value.note;
+		noteInput.value = savedNote;
+		toast(savedNote ? 'Note saved' : 'Note removed');
+	};
+	noteInput.addEventListener('change', () => void saveNote());
+	noteInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') noteInput.blur(); });
+	const noteRow = el('div', { class: 'note-row' }, noteInput, el('div', { class: 'chips' }, pinBtn), el('p', { class: 'hint', textContent: 'Shown under the name on the Codes page and searched by the filter. Stored in data/meta.json, not in the maFile.' }));
+
 	const body = el('div', { class: 'conf' });
 	const refreshBtn = el('button', { class: 'icon', title: 'Check now', ariaLabel: 'Check for confirmations', textContent: '↻', onclick: async () => {
 		refreshBtn.disabled = true;
@@ -1605,6 +1672,7 @@ async function detailScreen(id: string): Promise<void> {
 				'div',
 				{ class: 'groups' },
 				el('section', { class: 'group profile-card' }, profile),
+				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Note' }), noteRow),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Copy' }), chips, pwBlock),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Open on Steam, signed in' }), webBar, el('p', { class: 'hint', textContent: 'Opens a separate window that is already logged in as this account. Nothing is kept when you close it.' })),
 				el('section', { class: 'group' }, el('div', { class: 'section-head' }, el('h2', { class: 'todo-title', textContent: 'Confirmations' }), refreshBtn), body),
@@ -1771,6 +1839,7 @@ async function detailScreen(id: string): Promise<void> {
 
 async function settingsScreen(): Promise<void> {
 	const s = settings;
+	const healthBox = el('div', { class: 'health-box' });
 	const set = async (patch: Partial<Settings>): Promise<void> => {
 		const r = await api.setSettings(patch);
 		if (!r.ok) return toast(r.error, true);
@@ -1852,6 +1921,23 @@ async function settingsScreen(): Promise<void> {
 			row('Clear after copying', 'Codes and secrets', select(s.clipboardClearSeconds, [[0, 'Never'], [15, '15 seconds'], [30, '30 seconds'], [60, '1 minute']], (v) => void set({ clipboardClearSeconds: v }), 'Clear clipboard')),
 			el('h2', { textContent: 'Security' }),
 			...securityRows(),
+			el('h2', { textContent: 'Health check' }),
+			el('div', { class: 'setting stack' },
+				el('span', { class: 'hint', textContent: 'Checks every account on this PC: secrets valid, sign-in state, saved password, revocation code, and how far your clock is from Steam. Only the time is asked from Steam.' }),
+				el('div', { class: 'row-actions left' }, el('button', { class: 'small', type: 'button', textContent: 'Run check', onclick: async (e: Event) => {
+					const b = e.currentTarget as HTMLButtonElement;
+					b.disabled = true;
+					const r = await api.healthCheck();
+					b.disabled = false;
+					if (!r.ok) return toast(r.error, true);
+					const skewBad = Math.abs(r.value.skew) > 30;
+					healthBox.replaceChildren(
+						el('p', { class: `hint${skewBad ? ' error' : ''}`, textContent: Math.abs(r.value.skew) <= 2 ? 'Clock: in sync with Steam' : `Clock: ${Math.abs(r.value.skew)} s ${r.value.skew > 0 ? 'behind' : 'ahead of'} Steam${skewBad ? '. Codes are corrected automatically, but fix your PC clock' : ' (corrected automatically)'}` }),
+						...r.value.rows.map((x) => el('div', { class: `health ${x.level}` },
+							el('strong', { textContent: `${x.level === 'ok' ? '✓' : x.level === 'warn' ? '!' : '✕'} ${accountLabel(x.name, x.nickname)}` }),
+							...(x.issues.length ? x.issues.map((t) => el('span', { class: 'hint', textContent: t })) : [el('span', { class: 'hint', textContent: 'Everything in order' })]))));
+				} })),
+				healthBox),
 			el('h2', { textContent: 'Importing' }),
 			row('Check for updates', 'Asks GitHub each time the app starts if a newer release exists and tells you. Nothing is downloaded or installed', el('div', { class: 'row-actions left' },
 				el('button', { class: 'small', type: 'button', textContent: 'Check now', onclick: async () => { const found = await checkForUpdate(true); if (!found) toast('You have the latest version'); } }),

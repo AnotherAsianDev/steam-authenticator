@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('api', {
 	copyCode: (id: string) => call('copyCode', id),
 	copyField: (id: string, field: string) => call('copyField', id, field),
 	detail: (id: string) => call('detail', id),
+	setMeta: (id: string, patch: Record<string, unknown>) => call('setMeta', id, patch),
+	healthCheck: () => call('healthCheck'),
 	confirmations: (id: string) => call('confirmations', id),
 	refresh: (id: string) => call('refresh', id),
 	act: (id: string, action: 'accept' | 'deny', ids: string[]) => call('act', id, action, ids),

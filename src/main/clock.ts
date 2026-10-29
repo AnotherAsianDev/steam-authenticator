@@ -4,6 +4,9 @@ let offset = 0;
 /** Current time in Unix seconds, corrected to Steam's clock. */
 export const steamNow = (): number => Math.floor(Date.now() / 1000) + offset;
 
+/** How far this PC's clock is from Steam's, in seconds (positive: this PC is behind). */
+export const clockOffset = (): number => offset;
+
 export async function syncClock(): Promise<void> {
 	try {
 		const res = await fetch('https://api.steampowered.com/ITwoFactorService/QueryTime/v0001', {

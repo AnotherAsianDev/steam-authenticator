@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0
+- Pin accounts: a star on each account keeps it at the top of the Codes page, the Confirmations page and the Export list, whatever the sort.
+- Notes: a short note per account (set on the account page, up to 120 characters) shown under the name and searched by the filter. Pins and notes are stored in `data/meta.json`; the maFiles are not touched.
+- Confirmations page: "Accept all" / "Deny all" per account for what is shown (respects the filter, asks for a second click, never includes security-critical items).
+- Health check (Settings): tests each account's secrets, sign-in state, saved password and revocation code, and shows how far your PC clock is from Steam's.
+
 ## 0.7.1
 - The Export filter box now looks like the filter boxes on the other pages.
 - Clicking an avatar opens the account's Steam profile, in the list, the grid and the account page.

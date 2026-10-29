@@ -3,12 +3,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { basename, join } from 'node:path';
 import { Accounts } from './accounts';
 import { describeWriteError } from './atomic';
+import { AccountMeta } from './meta';
 import { UserError } from './errors';
 import { AvatarCache } from './avatar';
 import { findMaFileFolders, importFolder, normalizeStoreFolder, readMaFile } from './autoimport';
 import { CredentialStore } from './credentials';
 import { FolderWatcher } from './watcher';
-import { steamNow, syncClock } from './clock';
+import { clockOffset, steamNow, syncClock } from './clock';
 import { ConfirmationsClient, fetchTransport, type Action } from './confirmations';
 import { MaFileError, parseMaFile } from './mafile';
 import { SettingsStore } from './settings';
@@ -26,7 +27,7 @@ import { importLines, importOne, type LineImportDeps, type LineResult } from './
 import { Trash } from './trash';
 import { checkPin, DevicePin, Vault } from './vault';
 import { fitWindowState, loadWindowState, saveWindowState } from './windowstate';
-import { generateCode, secondsRemaining } from './totp';
+import { decodeSecret, generateCode, secondsRemaining } from './totp';
 
 const legacyData = app.getPath('userData');
 const layout = resolveLayout(app.isPackaged, process.execPath, legacyData);
@@ -39,6 +40,7 @@ const migrated = migrateLegacy(legacyData, layout);
 const data = layout.data;
 const store = new MaFileStore(layout.maFiles);
 const addedDates = new AddedDates(join(layout.data, 'added.json'));
+const meta = new AccountMeta(join(layout.data, 'meta.json'));
 const vault = new Vault(join(data, 'vault.json'));
 // The PIN lives on this PC only, never in the (possibly synced) program folder.
 const devicePin = new DevicePin(join(process.env['LOCALAPPDATA'] ?? app.getPath('appData'), 'AuthenticatorDevice'), () => vault.id);
@@ -241,6 +243,8 @@ function registerIpc(): void {
 			return {
 				steamId,
 				addedAt: addedDates.get(steamId, () => store.fileTime(steamId)),
+				pinned: meta.get(steamId).pinned,
+				note: meta.get(steamId).note,
 				name: a.accountName,
 				code: generateCode(a.sharedSecret, t),
 				remaining: secondsRemaining(t),
@@ -277,7 +281,38 @@ function registerIpc(): void {
 	});
 	handle('detail', (steamId: unknown) => {
 		const a = accounts.get(known(steamId))!;
-		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId) };
+		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note };
+	});
+	handle('setMeta', (steamId: unknown, patch: unknown) => {
+		const id = known(steamId);
+		if (typeof patch !== 'object' || patch === null) throw new UserError('Invalid change');
+		return meta.set(id, patch as { pinned?: unknown; note?: unknown });
+	});
+	handle('healthCheck', async () => {
+		await syncClock();
+		const skew = clockOffset();
+		const rows = accounts.ids().map((steamId) => {
+			const a = accounts.get(steamId)!;
+			const bad: string[] = [];
+			const warn: string[] = [];
+			try {
+				generateCode(a.sharedSecret, steamNow());
+			} catch {
+				bad.push('The shared secret is not valid, so codes would be wrong');
+			}
+			try {
+				decodeSecret(a.identitySecret);
+			} catch {
+				warn.push('The identity secret is missing or not valid, so confirmations cannot be signed');
+			}
+			const st = accounts.status(steamId);
+			if (st.state === 'signin') warn.push('Needs a sign-in to show confirmations');
+			else if (st.state === 'error') warn.push(st.message ?? 'Confirmations could not be checked');
+			if (!accounts.hasPassword(steamId)) warn.push('No saved password');
+			if (!a.revocationCode) warn.push('No revocation code (you cannot remove the authenticator without it)');
+			return { steamId, name: a.accountName, nickname: avatars.nickname(steamId) ?? null, level: bad.length ? 'bad' : warn.length ? 'warn' : 'ok', issues: [...bad, ...warn] };
+		});
+		return { skew, rows };
 	});
 
 	handle('confirmations', (steamId: unknown) => publicStatus(known(steamId)));
@@ -410,7 +445,7 @@ function registerIpc(): void {
 		accounts.ids().map((steamId) => {
 			const a = accounts.get(steamId)!;
 			const st = accounts.status(steamId);
-			return { steamId, name: a.accountName, nickname: avatars.nickname(steamId) ?? null, addedAt: addedDates.get(steamId, () => store.fileTime(steamId)), pending: st.state === 'ok' ? st.items.length : null, hasPassword: accounts.hasPassword(steamId), hasRevocation: !!a.revocationCode };
+			return { steamId, name: a.accountName, nickname: avatars.nickname(steamId) ?? null, addedAt: addedDates.get(steamId, () => store.fileTime(steamId)), pinned: meta.get(steamId).pinned, note: meta.get(steamId).note, pending: st.state === 'ok' ? st.items.length : null, hasPassword: accounts.hasPassword(steamId), hasRevocation: !!a.revocationCode };
 		})
 	);
 	handle('exportCheck', (ids: unknown, fields: unknown, delimiter: unknown, skip: unknown) => {
@@ -466,6 +501,7 @@ function registerIpc(): void {
 			steamId,
 			name: accounts.get(steamId)!.accountName,
 			nickname: avatars.nickname(steamId) ?? null,
+			pinned: meta.get(steamId).pinned,
 			...publicStatus(steamId)
 		}))
 	);
