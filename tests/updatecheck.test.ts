@@ -24,18 +24,17 @@ describe('versions', () => {
 });
 
 describe('UpdateChecker', () => {
-	it('reports a newer release and asks only once a day', async () => {
+	it('reports a newer release and asks every time', async () => {
 		let calls = 0;
-		let t = 100_000_000;
-		const c = new UpdateChecker(file(), '0.4.2', async () => (calls++, reply('v0.4.3')), () => t);
+		const c = new UpdateChecker(file(), '0.4.2', async () => (calls++, reply('v0.4.3')));
 		expect((await c.check())?.version).toBe('0.4.3');
 		expect((await c.check())?.version).toBe('0.4.3');
-		expect(calls).toBe(1);
-		t += 21 * 3600 * 1000;
-		await c.check();
 		expect(calls).toBe(2);
-		await c.check(true);
-		expect(calls).toBe(3);
+	});
+	it('falls back to the last answer when offline', async () => {
+		const f = file();
+		await new UpdateChecker(f, '0.4.2', async () => reply('v0.4.3')).check();
+		expect((await new UpdateChecker(f, '0.4.2', async () => { throw new Error('offline'); }).check())?.version).toBe('0.4.3');
 	});
 	it('says nothing when up to date, offline, or the repository has no release', async () => {
 		expect(await new UpdateChecker(file(), '0.4.3', async () => reply('v0.4.3')).check()).toBeUndefined();

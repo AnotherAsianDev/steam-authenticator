@@ -421,7 +421,7 @@ function registerIpc(): void {
 	/** The notice to show, or nothing: turned off, up to date, not reachable, or dismissed. */
 	handle('updateInfo', async (force: unknown) => {
 		if (!settings.get().checkUpdates && force !== true) return null;
-		const u = await updates.check(force === true);
+		const u = await updates.check();
 		return u && (force === true || u.version !== settings.get().updateDismissed) ? u : null;
 	});
 	handle('updateOpen', async () => {

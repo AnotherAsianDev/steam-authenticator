@@ -4,12 +4,11 @@ import { log } from './log';
 /**
  * Tells the user that a newer release exists. It never downloads or installs anything:
  * the user opens the release page and replaces the folder themselves.
- * One request to the GitHub API at most every 20 hours, only when the setting is on.
+ * One request to the GitHub API each time the app starts (and on "Check now"), only when the setting is on.
  */
 
 export const REPO = 'AnotherAsianDev/steam-authenticator';
 const API = `https://api.github.com/repos/${REPO}/releases/latest`;
-const EVERY_MS = 20 * 3600 * 1000;
 
 export interface Update {
 	version: string;
@@ -70,24 +69,22 @@ export class UpdateChecker {
 		}
 	}
 
-	/** The newer release, if there is one. `force` ignores the 20 hour wait. Network trouble is not an error. */
-	async check(force = false): Promise<Update | undefined> {
+	/** The newer release, if there is one. Always asks GitHub; when that fails the last known answer is used. Network trouble is not an error. */
+	async check(): Promise<Update | undefined> {
 		let state = this.load();
-		if (force || this.now() - state.checkedAt >= EVERY_MS) {
-			try {
-				const res = await this.fetcher(API, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'steam-authenticator-update-check' }, signal: AbortSignal.timeout(8000) });
-				if (res.ok) {
-					const latest = releaseFromReply(await res.json());
-					state = { checkedAt: this.now(), ...(latest ? { latest } : {}) };
-					this.save(state);
-				} else if (res.status === 404) {
-					// No release published (yet): nothing to offer, and no need to ask again for a while.
-					state = { checkedAt: this.now() };
-					this.save(state);
-				}
-			} catch (err) {
-				log.info('update', `Could not check for updates: ${err instanceof Error ? err.message : 'unknown error'}`);
+		try {
+			const res = await this.fetcher(API, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'steam-authenticator-update-check' }, signal: AbortSignal.timeout(8000) });
+			if (res.ok) {
+				const latest = releaseFromReply(await res.json());
+				state = { checkedAt: this.now(), ...(latest ? { latest } : {}) };
+				this.save(state);
+			} else if (res.status === 404) {
+				// No release published (yet): nothing to offer.
+				state = { checkedAt: this.now() };
+				this.save(state);
 			}
+		} catch (err) {
+			log.info('update', `Could not check for updates: ${err instanceof Error ? err.message : 'unknown error'}`);
 		}
 		return state.latest && isNewer(state.latest.version, this.current) ? state.latest : undefined;
 	}

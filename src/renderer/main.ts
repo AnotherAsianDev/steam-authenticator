@@ -1755,7 +1755,7 @@ async function settingsScreen(): Promise<void> {
 			el('h2', { textContent: 'Security' }),
 			...securityRows(),
 			el('h2', { textContent: 'Importing' }),
-			row('Check for updates', 'Asks GitHub once a day if a newer release exists and tells you. Nothing is downloaded or installed', el('div', { class: 'row-actions left' },
+			row('Check for updates', 'Asks GitHub each time the app starts if a newer release exists and tells you. Nothing is downloaded or installed', el('div', { class: 'row-actions left' },
 				el('button', { class: 'small', type: 'button', textContent: 'Check now', onclick: async () => { const found = await checkForUpdate(true); if (!found) toast('You have the latest version'); } }),
 				toggle(s.checkUpdates, (v) => void set({ checkUpdates: v }), 'Check for updates')),),
 			row('Find SDA folders automatically', 'Looks for folders named maFiles in Downloads, Desktop and Documents when the app starts', toggle(s.autoDetect, (v) => void set({ autoDetect: v }), 'Find SDA folders automatically')),
