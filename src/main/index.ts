@@ -402,7 +402,8 @@ function registerIpc(): void {
 	handle('exportInfo', () =>
 		accounts.ids().map((steamId) => {
 			const a = accounts.get(steamId)!;
-			return { steamId, name: a.accountName, nickname: avatars.nickname(steamId) ?? null, hasPassword: accounts.hasPassword(steamId), hasRevocation: !!a.revocationCode };
+			const st = accounts.status(steamId);
+			return { steamId, name: a.accountName, nickname: avatars.nickname(steamId) ?? null, addedAt: addedDates.get(steamId, () => store.fileTime(steamId)), pending: st.state === 'ok' ? st.items.length : null, hasPassword: accounts.hasPassword(steamId), hasRevocation: !!a.revocationCode };
 		})
 	);
 	handle('exportCheck', (ids: unknown, fields: unknown, delimiter: unknown, skip: unknown) => {

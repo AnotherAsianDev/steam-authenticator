@@ -55,6 +55,26 @@ interface EnrollState {
 	resumed?: boolean;
 }
 type SortBy = 'added-asc' | 'added-desc' | 'name-asc' | 'name-desc' | 'pending';
+interface Sortable {
+	steamId: string;
+	name: string;
+	nickname: string | null;
+	addedAt: number;
+	pending: number | null;
+}
+/** The account order chosen in the list, also used for the export. Returns a new array. */
+function sortAccounts<T extends Sortable>(rows: T[]): T[] {
+	const label = (x: Sortable): string => (settings.showNickname && x.nickname ? x.nickname : x.name).toLowerCase();
+	const byName = (a: Sortable, b: Sortable): number => label(a).localeCompare(label(b), undefined, { numeric: true }) || a.steamId.localeCompare(b.steamId);
+	const by = settings.sortBy;
+	return [...rows].sort((a, b) => {
+		if (by === 'added-asc') return a.addedAt - b.addedAt || byName(a, b);
+		if (by === 'added-desc') return b.addedAt - a.addedAt || byName(a, b);
+		if (by === 'name-asc') return byName(a, b);
+		if (by === 'name-desc') return byName(b, a);
+		return (b.pending ?? 0) - (a.pending ?? 0) || byName(a, b);
+	});
+}
 const SORTS: [SortBy, string][] = [['added-asc', 'Added: oldest first'], ['added-desc', 'Added: newest first'], ['name-asc', 'Name: A to Z'], ['name-desc', 'Name: Z to A'], ['pending', 'Most pending first']];
 
 interface TodoItem {
@@ -119,7 +139,7 @@ declare const api: {
 	todo(): P<TodoItem[]>;
 	todoIgnore(id: string, kind: string): P<Settings>;
 	setRevocation(id: string, code: string): P<void>;
-	exportInfo(): P<{ steamId: string; name: string; nickname: string | null; hasPassword: boolean; hasRevocation: boolean }[]>;
+	exportInfo(): P<{ steamId: string; name: string; nickname: string | null; addedAt: number; pending: number | null; hasPassword: boolean; hasRevocation: boolean }[]>;
 	exportCheck(ids: string[], fields: string[], d: string, skip: boolean): P<{ count: number; skipped: number; conflicts: number }>;
 	exportCopy(ids: string[], fields: string[], d: string, skip: boolean): P<number>;
 	exportSave(ids: string[], fields: string[], d: string, skip: boolean): P<{ count: number; path: string } | null>;
@@ -630,16 +650,7 @@ async function listScreen(): Promise<void> {
 	});
 	/** Puts the rows in the chosen order. Only touches the page when the order actually differs, so the list does not flicker. */
 	function applyOrder(rows: Row[]): void {
-		const label = (x: Row): string => accountLabel(x.name, x.nickname).toLowerCase();
-		const byName = (a: Row, b: Row): number => label(a).localeCompare(label(b), undefined, { numeric: true }) || a.steamId.localeCompare(b.steamId);
-		const by = settings.sortBy;
-		const sorted = [...rows].sort((a, b) => {
-			if (by === 'added-asc') return a.addedAt - b.addedAt || byName(a, b);
-			if (by === 'added-desc') return b.addedAt - a.addedAt || byName(a, b);
-			if (by === 'name-asc') return byName(a, b);
-			if (by === 'name-desc') return byName(b, a);
-			return (b.pending ?? 0) - (a.pending ?? 0) || byName(a, b);
-		});
+		const sorted = sortAccounts(rows);
 		const items = Array.from(list.querySelectorAll<HTMLLIElement>('li'));
 		const current = items.map((li) => li.dataset['id']);
 		if (current.length === sorted.length && current.every((id, i) => id === sorted[i]!.steamId)) return;
@@ -1054,7 +1065,7 @@ async function exportScreen(): Promise<void> {
 		toast(info.error, true);
 		return goList();
 	}
-	const accountsList = info.value;
+	const accountsList = sortAccounts(info.value);
 	let order = [...settings.exportFields.filter((f) => f in FIELD_INFO)];
 	let on = new Set(order);
 	let delimiter = settings.exportDelimiter;
@@ -1110,6 +1121,17 @@ async function exportScreen(): Promise<void> {
 			drawSeps();
 			update();
 		}
+	});
+
+	const exportSort = el('select', { class: 'sort', ariaLabel: 'Sort accounts', title: 'Sort accounts' },
+		...SORTS.map(([v, text]) => el('option', { value: v, textContent: text, selected: settings.sortBy === v })));
+	exportSort.addEventListener('change', async () => {
+		const r = await api.setSettings({ sortBy: exportSort.value as SortBy });
+		if (!r.ok) return toast(r.error, true);
+		applySettings(r.value);
+		accountsList.splice(0, accountsList.length, ...sortAccounts(accountsList));
+		drawAccounts();
+		update();
 	});
 
 	function drawAccounts(): void {
@@ -1189,7 +1211,7 @@ async function exportScreen(): Promise<void> {
 			el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: '1. What to include, in which order' }), el('p', { class: 'hint', textContent: 'Tick the fields and use the arrows to set the order.' }), fieldsBox),
 			el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: '2. Separator' }), el('p', { class: 'hint', textContent: 'Put between the values on each line.' }), sepBox),
 			el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: '3. Example' }), el('p', { class: 'hint', textContent: 'Made-up data, one line per account:' }), formatLine, exampleBox),
-			el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: '4. Accounts' }), accBox, el('label', { class: 'check' }, skipBox, 'Leave out accounts that are missing a chosen value')),
+			el('section', { class: 'group' }, el('div', { class: 'group-head' }, el('h2', { class: 'todo-title', textContent: '4. Accounts' }), exportSort), el('p', { class: 'hint', textContent: 'The lines are written in this order. It is the same order as on the Codes page.' }), accBox, el('label', { class: 'check' }, skipBox, 'Leave out accounts that are missing a chosen value')),
 			el('section', { class: 'group' }, status, el('div', { class: 'row-actions left' }, copyBtn, saveBtn), el('p', { class: 'hint', textContent: 'The result is plain text with your real passwords and secrets. Keep it safe and delete it when done. Copied text is cleared from the clipboard after the time set in Settings.' }))
 		)
 	);
