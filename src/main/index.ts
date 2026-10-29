@@ -6,6 +6,7 @@ import { describeWriteError } from './atomic';
 import { AccountMeta } from './meta';
 import { UserError } from './errors';
 import { AvatarCache, type Bans } from './avatar';
+import { fetchBans, KEY_FORMAT, testKey } from './bansapi';
 import { findMaFileFolders, importFolder, normalizeStoreFolder, readMaFile } from './autoimport';
 import { CredentialStore } from './credentials';
 import { FolderWatcher } from './watcher';
@@ -55,6 +56,8 @@ app.on('child-process-gone', (_e, details) => log.warn('app', `A helper process 
 process.on('unhandledRejection', (err) => log.error('app', 'Unhandled error', err));
 const secretValues = (): string[] => {
 	const out: string[] = [];
+	const apiKey = credentials.get(API_KEY_ID);
+	if (apiKey) out.push(apiKey);
 	for (const id of accounts.ids()) {
 		const a = accounts.get(id)!;
 		out.push(a.sharedSecret, a.identitySecret);
@@ -170,10 +173,47 @@ function handle<T>(channel: string, fn: (...args: any[]) => T | Promise<T>): voi
 	});
 }
 
+const API_KEY_ID = '_apiKey';
+const apiKeyState = (): { has: boolean; locked: boolean; hint: string } => {
+	const k = credentials.get(API_KEY_ID);
+	return { has: !!k, locked: credentials.locked, hint: k ? `…${k.slice(-4)}` : '' };
+};
+let apiBansAt = 0;
+let apiBansIds = '';
+let apiBansBusy = false;
+/** With a Web API key, all accounts are asked about in one request every 12 hours, or soon after the account list changes. */
+function refreshApiBans(ids: string[]): void {
+	const key = credentials.get(API_KEY_ID);
+	const on = !!key && settings.get().checkBans;
+	avatars.setApiMode(on);
+	if (!on || apiBansBusy || ids.length === 0) return;
+	const sig = ids.join(',');
+	const age = Date.now() - apiBansAt;
+	if (age < 12 * 3600_000 && !(sig !== apiBansIds && age > 60_000)) return;
+	apiBansBusy = true;
+	apiBansAt = Date.now();
+	apiBansIds = sig;
+	fetchBans(key!, ids)
+		.then((found) => {
+			for (const [id, b] of Object.entries(found)) if (ids.includes(id)) avatars.setBans(id, b);
+		})
+		.catch((err) => {
+			log.info('bans', `Ban check through the API failed: ${err instanceof Error ? err.message : String(err)}`);
+			apiBansAt = Date.now() - 11 * 3600_000; // try again in an hour
+		})
+		.finally(() => {
+			apiBansBusy = false;
+		});
+}
+/** One line about how long ago the last ban was (only known through the API). */
+function banNote(b: Bans | undefined): string {
+	return b?.daysSince !== undefined ? `Last ban ${b.daysSince === 0 ? 'today' : `${b.daysSince} day${b.daysSince === 1 ? '' : 's'} ago`}.` : '';
+}
+
 /** Short texts for what is wrong with an account on Steam's side (empty when nothing is). */
 function bannedLabels(b: Bans | undefined): string[] {
 	if (!b) return [];
-	return [b.vac ? 'VAC ban' : '', b.trade === 'Banned' ? 'Trade ban' : b.trade === 'Probation' ? 'Trade probation' : ''].filter(Boolean);
+	return [b.vac ? ((b.vacCount ?? 0) > 1 ? `VAC ban ×${b.vacCount}` : 'VAC ban') : '', (b.gameBans ?? 0) > 0 ? ((b.gameBans ?? 0) > 1 ? `Game ban ×${b.gameBans}` : 'Game ban') : '', b.community ? 'Community ban' : '', b.trade === 'Banned' ? 'Trade ban' : b.trade === 'Probation' ? 'Trade probation' : ''].filter(Boolean);
 }
 
 const publicStatus = (id: string) => {
@@ -247,6 +287,7 @@ function registerIpc(): void {
 		const watchBans = settings.get().checkBans;
 		const wantProfiles = showAvatars || settings.get().showNickname || watchBans;
 		const ids = accounts.ids();
+		refreshApiBans(ids);
 		const rows = ids.map((steamId) => {
 			const a = accounts.get(steamId)!;
 			const st = accounts.status(steamId);
@@ -293,8 +334,32 @@ function registerIpc(): void {
 	});
 	handle('detail', (steamId: unknown) => {
 		const a = accounts.get(known(steamId))!;
-		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note, bans: bannedLabels(avatars.bans(a.steamId)) };
+		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note, bans: bannedLabels(avatars.bans(a.steamId)), banNote: banNote(avatars.bans(a.steamId)) };
 	});
+	handle('apiKeyState', () => apiKeyState());
+	handle('apiKeySet', async (key: unknown) => {
+		const k = str(key, 'key').trim();
+		if (!KEY_FORMAT.test(k)) throw new UserError('A Web API key is 32 characters of 0 to 9 and A to F');
+		const r = await testKey(k);
+		if (r === 'invalid') throw new UserError('Steam does not accept this key. Check that you copied all of it');
+		if (r === 'network') throw new UserError('Could not reach Steam, so the key was not checked or saved');
+		credentials.set(API_KEY_ID, k);
+		apiBansAt = 0;
+		avatars.setApiMode(true);
+		return apiKeyState();
+	});
+	handle('apiKeyTest', async () => {
+		const k = credentials.get(API_KEY_ID);
+		if (!k) throw new UserError('No key is saved');
+		return testKey(k);
+	});
+	handle('apiKeyRemove', () => {
+		credentials.delete(API_KEY_ID);
+		avatars.setApiMode(false);
+		avatars.refreshAll();
+		return apiKeyState();
+	});
+	handle('apiKeyPage', () => shell.openExternal('https://steamcommunity.com/dev/apikey'));
 	handle('setMeta', (steamId: unknown, patch: unknown) => {
 		const id = known(steamId);
 		if (typeof patch !== 'object' || patch === null) throw new UserError('Invalid change');
@@ -303,6 +368,7 @@ function registerIpc(): void {
 	handle('healthCheck', async () => {
 		await syncClock();
 		avatars.refreshAll();
+		apiBansAt = 0;
 		const skew = clockOffset();
 		const rows = accounts.ids().map((steamId) => {
 			const a = accounts.get(steamId)!;

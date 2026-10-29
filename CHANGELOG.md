@@ -1,9 +1,10 @@
 # Changelog
 
 ## 0.9.0
-- New compact design: smaller rows, avatars and codes so more fits on screen, and a side menu that collapses to icons (button at its bottom; the choice is remembered).
-- Theme switch in the side menu: system, light or dark. Same choice as in Settings.
-- New "columns" view: the list layout with two or more accounts per line, depending on the window width. Grid and columns use the full window width.
+- New compact design: smaller rows, avatars and codes so more fits on screen, and a side menu that collapses to icons. Two small icons at the bottom of the menu collapse/expand it and switch the theme (system, light, dark).
+- New "columns" view: compact rows with two or more accounts per line, depending on the window width. Grid and columns use the full window width.
+- Right-click an account: copy code, username, SteamID64 or saved password; pin; details and note; confirmations; check confirmations now; open the profile, inventory or trade offers; move to trash.
+- Optional Steam Web API key (Settings): checked with Steam before it is saved, can be tested again later or removed. With it, bans (VAC with count, game bans, community bans, trade bans, days since the last ban) come from the official API for all accounts in one request every 12 hours. The key is stored with the saved passwords (encrypted with a master password) and is hidden from the log.
 - Ban check: the public profile page that is already read for the name and picture also says whether an account has a VAC ban or a trade ban. Such accounts get a red tag in the list, a "banned" chip in the overview, a section on the account page and a line in the Health check, and a new ban is reported as soon as it is seen. Profiles are now read about every 12 hours per account instead of weekly (one request each, the picture only when it changed). Turn it off with Settings, Watch for bans. Community bans and game bans are not part of that page; see the notes.
 - Export, Codes and the account page: pinned accounts first, as before.
 - Cleanup: removed the Density setting (the design is compact now), unused code and imports, and merged the profile name and picture address files into one `data/avatars/profiles.json` (older files are read once and carried over). The build now fails on unused code.

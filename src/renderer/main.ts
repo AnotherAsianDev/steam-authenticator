@@ -118,8 +118,13 @@ declare const api: {
 	avatar(id: string): P<string | null>;
 	copyCode(id: string): P<void>;
 	copyField(id: string, field: string): P<void>;
-	detail(id: string): P<{ steamId: string; name: string; nickname: string | null; hasRevocation: boolean; hasPassword: boolean; pinned: boolean; note: string; bans: string[] }>;
+	detail(id: string): P<{ steamId: string; name: string; nickname: string | null; hasRevocation: boolean; hasPassword: boolean; pinned: boolean; note: string; bans: string[]; banNote: string }>;
 	setMeta(id: string, patch: { pinned?: boolean; note?: string }): P<{ pinned: boolean; note: string }>;
+	apiKeyState(): P<{ has: boolean; locked: boolean; hint: string }>;
+	apiKeySet(key: string): P<{ has: boolean; locked: boolean; hint: string }>;
+	apiKeyTest(): P<'ok' | 'invalid' | 'network'>;
+	apiKeyRemove(): P<{ has: boolean; locked: boolean; hint: string }>;
+	apiKeyPage(): P<void>;
 	healthCheck(): P<{ skew: number; rows: { steamId: string; name: string; nickname: string | null; level: 'ok' | 'warn' | 'bad'; issues: string[] }[] }>;
 	confirmations(id: string): P<Status>;
 	refresh(id: string): P<Status>;
@@ -293,18 +298,16 @@ function buildShell(): void {
 			item('trash', 'Trash', () => void navigate({ name: 'trash' })),
 			item('log', 'Log', () => void navigate({ name: 'log' }), true),
 			item('settings', 'Settings', () => void navigate({ name: 'settings' })),
-			el('button', { class: 'nav theme', type: 'button', onclick: async () => {
-				const next = ({ system: 'light', light: 'dark', dark: 'system' } as const)[settings.theme];
-				const r = await api.setSettings({ theme: next });
-				if (r.ok) applySettings(r.value);
-			} }, el('span', { class: 'ico' }), el('span', { class: 'label', textContent: 'Theme' })),
-			(() => {
-				const b = el('button', { class: 'nav collapse', type: 'button', onclick: async () => {
+			el('div', { class: 'mini-row' },
+				el('button', { class: 'mini theme', type: 'button', onclick: async () => {
+					const next = ({ system: 'light', light: 'dark', dark: 'system' } as const)[settings.theme];
+					const r = await api.setSettings({ theme: next });
+					if (r.ok) applySettings(r.value);
+				} }, el('span', { class: 'ico' })),
+				el('button', { class: 'mini collapse', type: 'button', onclick: async () => {
 					const r = await api.setSettings({ sidebarCollapsed: !settings.sidebarCollapsed });
 					if (r.ok) applySettings(r.value);
-				} }, icon('collapse'), el('span', { class: 'label', textContent: 'Collapse' }));
-				return b;
-			})()
+				} }, icon('collapse')))
 		)
 	);
 	root.replaceChildren(el('div', { class: `shell${settings.sidebarCollapsed ? ' collapsed' : ''}` }, side, el('div', { class: 'pane' }, titleBar(), content)));
@@ -363,20 +366,18 @@ function applySettings(s: Settings): void {
 	if (s.theme === 'system') delete document.documentElement.dataset['theme'];
 	else document.documentElement.dataset['theme'] = s.theme;
 	document.body.classList.toggle('wide', s.layout !== 'list');
-	const th = document.querySelector<HTMLElement>('.nav.theme');
+	const th = document.querySelector<HTMLElement>('.mini.theme');
 	if (th) {
 		const label = { system: 'Theme: system', light: 'Theme: light', dark: 'Theme: dark' }[s.theme];
 		th.title = `${label}. Click to change`;
 		th.setAttribute('aria-label', th.title);
-		th.querySelector('.label')!.textContent = label;
-		th.querySelector('.ico')!.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[`theme-${s.theme}`]}</svg>`;
+		th.querySelector('.ico')!.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[`theme-${s.theme}`]}</svg>`;
 	}
 	document.querySelector('.shell')?.classList.toggle('collapsed', s.sidebarCollapsed);
-	const t = document.querySelector<HTMLElement>('.nav.collapse');
+	const t = document.querySelector<HTMLElement>('.mini.collapse');
 	if (t) {
 		t.title = s.sidebarCollapsed ? 'Expand the menu' : 'Collapse the menu';
 		t.setAttribute('aria-label', t.title);
-		t.querySelector('.label')!.textContent = 'Collapse';
 		t.querySelector('svg')?.style.setProperty('transform', s.sidebarCollapsed ? 'none' : 'rotate(180deg)');
 	}
 }
@@ -496,6 +497,51 @@ async function navigate(v: typeof view): Promise<void> {
 }
 
 /** A button that must be pressed twice within a few seconds. */
+type MenuItem = 'sep' | { label: string; run: () => void | Promise<void>; danger?: boolean; confirm?: string };
+let closeMenu: () => void = () => undefined;
+/** A small right-click menu at the pointer. Closes on a click elsewhere, Escape, scrolling or when the window loses focus. */
+function showMenu(x: number, y: number, items: MenuItem[]): void {
+	closeMenu();
+	const menu = el('div', { class: 'ctx', role: 'menu' });
+	for (const it of items) {
+		if (it === 'sep') {
+			menu.append(el('div', { class: 'ctx-sep', role: 'separator' }));
+			continue;
+		}
+		const b = el('button', { class: `ctx-item${it.danger ? ' danger' : ''}`, type: 'button', role: 'menuitem', textContent: it.label });
+		let armed = false;
+		b.addEventListener('click', () => {
+			if (it.confirm && !armed) {
+				armed = true;
+				b.textContent = it.confirm;
+				return;
+			}
+			closeMenu();
+			void it.run();
+		});
+		menu.append(b);
+	}
+	document.body.append(menu);
+	const r = menu.getBoundingClientRect();
+	menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
+	menu.style.top = `${Math.max(4, Math.min(y, window.innerHeight - r.height - 4))}px`;
+	const away = (e: Event): void => { if (!menu.contains(e.target as Node)) closeMenu(); };
+	const key = (e: KeyboardEvent): void => { if (e.key === 'Escape') closeMenu(); };
+	closeMenu = () => {
+		menu.remove();
+		document.removeEventListener('mousedown', away, true);
+		document.removeEventListener('keydown', key, true);
+		document.removeEventListener('wheel', closeMenu, true);
+		window.removeEventListener('blur', closeMenu);
+		closeMenu = () => undefined;
+	};
+	document.addEventListener('mousedown', away, true);
+	document.addEventListener('keydown', key, true);
+	document.addEventListener('wheel', closeMenu, true);
+	window.addEventListener('blur', closeMenu);
+	menu.querySelector<HTMLElement>('.ctx-item')?.focus();
+}
+
 function confirmButton(label: string, confirmLabel: string, cls: string, run: () => void): HTMLButtonElement {
 	let armed: number | undefined;
 	const b = el('button', { class: cls, type: 'button', textContent: label });
@@ -719,6 +765,38 @@ async function listScreen(): Promise<void> {
 				drawLayout();
 			}
 		}));
+	list.addEventListener('contextmenu', (e) => {
+		const li = (e.target as HTMLElement).closest<HTMLLIElement>('li.row');
+		const row = li && lastRows.find((r) => r.steamId === li.dataset['id']);
+		if (!row) return;
+		e.preventDefault();
+		const id = row.steamId;
+		const copy = (field: string, done: string) => async (): Promise<void> => {
+			const r = await api.copyField(id, field);
+			toast(r.ok ? done : r.error, !r.ok);
+		};
+		const web = (target: string) => async (): Promise<void> => {
+			const r = await api.openSteam(id, target);
+			if (!r.ok) toast(r.error, true);
+		};
+		showMenu(e.clientX, e.clientY, [
+			{ label: 'Copy code', run: async () => { const r = await api.copyCode(id); toast(r.ok ? 'Code copied' : r.error, !r.ok); } },
+			{ label: 'Copy username', run: copy('username', 'Username copied') },
+			{ label: 'Copy SteamID64', run: copy('steamId', 'SteamID64 copied') },
+			{ label: 'Copy saved password', run: copy('password', 'Password copied') },
+			'sep',
+			{ label: row.pinned ? 'Unpin' : 'Pin to the top', run: async () => { const r = await api.setMeta(id, { pinned: !row.pinned }); if (!r.ok) return toast(r.error, true); await refresh(); } },
+			{ label: 'Details and note…', run: () => void navigate({ name: 'detail', id }) },
+			{ label: row.pending ? `Confirmations (${row.pending})` : 'Confirmations', run: () => void navigate({ name: 'confirms' }) },
+			{ label: 'Check confirmations now', run: async () => { const r = await api.refresh(id); toast(r.ok ? 'Checked' : r.error, !r.ok); await refresh(); } },
+			'sep',
+			{ label: 'Open Steam profile', run: async () => { const r = await api.openProfile(id); if (!r.ok) toast(r.error, true); } },
+			{ label: 'Open inventory (signed in)', run: web('inventory') },
+			{ label: 'Open trade offers (signed in)', run: web('tradeoffers') },
+			'sep',
+			{ label: 'Move to trash', confirm: 'Click again to move to trash', danger: true, run: async () => { const r = await api.remove(id); if (!r.ok) return toast(r.error, true); toast('Moved to the trash. You can restore it from Trash'); await refresh(); } }
+		]);
+	});
 	function drawLayout(): void {
 		list.classList.toggle('grid', settings.layout === 'grid');
 		list.classList.toggle('columns', settings.layout === 'columns');
@@ -1713,7 +1791,7 @@ async function detailScreen(id: string): Promise<void> {
 				'div',
 				{ class: 'groups' },
 				el('section', { class: 'group profile-card' }, profile),
-				...(d.value.bans.length ? [el('section', { class: 'group ban-box' }, el('h2', { class: 'todo-title', textContent: 'Steam shows' }), el('div', { class: 'chips' }, ...d.value.bans.map((b) => el('span', { class: 'ban-tag', textContent: b }))), el('p', { class: 'hint', textContent: 'As of the last time the public profile was read. Turn this off under Settings, Watch for bans.' }))] : []),
+				...(d.value.bans.length ? [el('section', { class: 'group ban-box' }, el('h2', { class: 'todo-title', textContent: 'Steam shows' }), el('div', { class: 'chips' }, ...d.value.bans.map((b) => el('span', { class: 'ban-tag', textContent: b }))), el('p', { class: 'hint', textContent: `${d.value.banNote ? d.value.banNote + ' ' : ''}As of the last check. Turn this off under Settings, Watch for bans.` }))] : []),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Note' }), noteRow),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Copy' }), chips, pwBlock),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Open on Steam, signed in' }), webBar, el('p', { class: 'hint', textContent: 'Opens a separate window that is already logged in as this account. Nothing is kept when you close it.' })),
@@ -1879,6 +1957,54 @@ async function detailScreen(id: string): Promise<void> {
 
 // --------------------------------------------------------------- settings --
 
+/** Settings row for the optional Steam Web API key: save (checked with Steam first), test, remove. */
+function apiKeyRow(): HTMLElement {
+	const status = el('span', { class: 'hint' });
+	const input = el('input', { type: 'password', class: 'key-input', placeholder: '32 characters', autocomplete: 'off', spellcheck: false, ariaLabel: 'Steam Web API key', maxLength: 64 });
+	const save = el('button', { class: 'small', type: 'button', textContent: 'Check and save' });
+	const test = el('button', { class: 'small', type: 'button', textContent: 'Test saved key' });
+	const remove = el('button', { class: 'small', type: 'button', textContent: 'Remove' });
+	const get = el('button', { class: 'link', type: 'button', textContent: 'Get a key', onclick: () => void api.apiKeyPage() });
+	const draw = (s: { has: boolean; locked: boolean; hint: string }): void => {
+		status.className = 'hint';
+		status.textContent = s.locked ? 'Locked. Unlock with your master password to use the key' : s.has ? `A key ending in ${s.hint} is saved. Bans, including community and game bans, are checked with it` : 'No key saved. Only VAC and trade bans are known, from the profile page';
+		test.hidden = remove.hidden = !s.has;
+		input.hidden = save.hidden = s.locked;
+	};
+	const busy = (on: boolean): void => { save.disabled = test.disabled = remove.disabled = on; };
+	save.addEventListener('click', async () => {
+		busy(true);
+		status.textContent = 'Asking Steam…';
+		const r = await api.apiKeySet(input.value);
+		busy(false);
+		if (!r.ok) { status.className = 'hint error'; status.textContent = r.error; return; }
+		input.value = '';
+		draw(r.value);
+		status.className = 'hint good';
+		status.textContent = `Steam accepted the key (ending in ${r.value.hint}). It is saved`;
+	});
+	test.addEventListener('click', async () => {
+		busy(true);
+		status.textContent = 'Asking Steam…';
+		const r = await api.apiKeyTest();
+		busy(false);
+		if (!r.ok) { status.className = 'hint error'; status.textContent = r.error; return; }
+		status.className = `hint ${r.value === 'ok' ? 'good' : 'error'}`;
+		status.textContent = r.value === 'ok' ? 'The saved key works' : r.value === 'invalid' ? 'Steam no longer accepts the saved key. Remove it or save a new one' : 'Could not reach Steam, so the key could not be tested';
+	});
+	remove.addEventListener('click', async () => {
+		const r = await api.apiKeyRemove();
+		if (r.ok) draw(r.value);
+	});
+	void api.apiKeyState().then((r) => r.ok && draw(r.value));
+	input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save.click(); });
+	return el('div', { class: 'setting stack' },
+		el('span', { class: 'setting-label', textContent: 'Steam Web API key (optional)' }),
+		el('span', { class: 'hint', textContent: 'Adds community bans, game bans and how long ago the last ban was, for all accounts in one request every 12 hours. Without it only VAC and trade bans are known. Steam gives a key to accounts that have spent at least $5; any domain name works when asked. The key is stored with your saved passwords (encrypted if you set a master password) and never leaves this PC except to ask Steam.' }),
+		el('div', { class: 'row-actions left key-row' }, input, save, test, remove, get),
+		status);
+}
+
 async function settingsScreen(): Promise<void> {
 	const s = settings;
 	const healthBox = el('div', { class: 'health-box' });
@@ -1956,6 +2082,7 @@ async function settingsScreen(): Promise<void> {
 			row('Show Steam nickname', 'Instead of the login name, which then appears under it. Taken from the public profile', toggle(s.showNickname, (v) => void set({ showNickname: v }), 'Show Steam nickname')),
 			row('Show SteamID64', 'Under each account name', toggle(s.showSteamId, (v) => void set({ showSteamId: v }), 'Show SteamID64')),
 			row('Show profile pictures', 'Fetched from the public profile, at most once a week per account', toggle(s.showAvatars, (v) => void set({ showAvatars: v }), 'Show profile pictures')),
+			apiKeyRow(),
 			el('h2', { textContent: 'Confirmations' }),
 			row('Check when the app starts', 'One round, one account at a time', toggle(s.checkOnStartup, (v) => void set({ checkOnStartup: v }), 'Check when the app starts')),
 			row('Check repeatedly', 'Off is safest. Steam rate-limits frequent checks', select(s.autoCheckSeconds, [[0, 'Never, only with the button'], [300, 'Every 5 minutes'], [900, 'Every 15 minutes'], [1800, 'Every 30 minutes']], (v) => void set({ autoCheckSeconds: v }), 'Check interval')),

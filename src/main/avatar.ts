@@ -44,6 +44,13 @@ export interface Bans {
 	trade: string;
 	/** Steam marks the account as limited (no spending yet). */
 	limited: boolean;
+	// The fields below only come from the official API (with a Web API key).
+	vacCount?: number;
+	gameBans?: number;
+	community?: boolean;
+	/** Days since the last VAC or game ban. */
+	daysSince?: number;
+	api?: true;
 }
 
 /** The ban fields of the public profile XML. Undefined when the page does not carry them (for example an error page). */
@@ -56,7 +63,7 @@ export function extractBans(xml: string): Bans | undefined {
 }
 
 /** True when something on the account deserves attention. */
-export const isBanned = (b: Bans | undefined): boolean => !!b && (b.vac || (b.trade !== 'None' && b.trade !== ''));
+export const isBanned = (b: Bans | undefined): boolean => !!b && (b.vac || !!b.community || (b.gameBans ?? 0) > 0 || (b.trade !== 'None' && b.trade !== ''));
 
 interface Profile {
 	name?: string;
@@ -76,6 +83,8 @@ export class AvatarCache {
 	private onDisk = new Set<string>();
 	private profiles: Record<string, Profile> = {};
 	private wants = new Map<string, { image: boolean; bans: boolean }>();
+	/** Bans come from the official API (a key is set); the profile page then no longer decides them. */
+	private apiMode = false;
 
 	constructor(
 		private readonly dir: string,
@@ -91,12 +100,12 @@ export class AvatarCache {
 			const raw = JSON.parse(readFileSync(join(this.dir, 'profiles.json'), 'utf8')) as Record<string, Partial<Profile>>;
 			for (const [id, p] of Object.entries(raw)) {
 				if (typeof p !== 'object' || p === null) continue;
-				const b = p.bans;
+				const b = p.bans as Partial<Bans> | undefined;
 				this.profiles[id] = {
 					...(typeof p.name === 'string' ? { name: p.name } : {}),
 					...(typeof p.url === 'string' ? { url: p.url } : {}),
 					checked: typeof p.checked === 'number' ? p.checked : 0,
-					...(b && typeof b.vac === 'boolean' && typeof b.trade === 'string' ? { bans: { vac: b.vac, trade: b.trade, limited: b.limited === true } } : {})
+					...(b && typeof b.vac === 'boolean' && typeof b.trade === 'string' ? { bans: { vac: b.vac, trade: b.trade, limited: b.limited === true, ...(typeof b.vacCount === 'number' ? { vacCount: b.vacCount } : {}), ...(typeof b.gameBans === 'number' ? { gameBans: b.gameBans } : {}), ...(typeof b.community === 'boolean' ? { community: b.community } : {}), ...(typeof b.daysSince === 'number' ? { daysSince: b.daysSince } : {}), ...(b.api ? { api: true as const } : {}) } } : {})
 				};
 			}
 			return;
@@ -142,6 +151,28 @@ export class AvatarCache {
 		return this.profiles[steamId]?.name;
 	}
 
+	setApiMode(on: boolean): void {
+		this.apiMode = on;
+	}
+
+	/** Bans from the official API. */
+	setBans(steamId: string, bans: Bans): void {
+		const before = this.profiles[steamId];
+		const next: Profile = { ...(before ?? { checked: 0 }), bans };
+		this.profiles[steamId] = next;
+		this.noteNewBan(steamId, before?.bans, bans);
+		this.save();
+		if (JSON.stringify(before?.bans) !== JSON.stringify(bans)) this.onUpdate();
+	}
+
+	private noteNewBan(steamId: string, before: Bans | undefined, now: Bans): void {
+		if (!before) return;
+		if (now.vac && !before.vac) this.onNewBan(steamId, 'a VAC ban');
+		else if ((now.gameBans ?? 0) > (before.gameBans ?? 0)) this.onNewBan(steamId, 'a game ban');
+		else if (now.community && !before.community) this.onNewBan(steamId, 'a community ban');
+		else if (now.trade !== before.trade && now.trade !== 'None') this.onNewBan(steamId, `a trade ban (${now.trade})`);
+	}
+
 	/** Ban state as of the last time the profile was read. */
 	bans(steamId: string): Bans | undefined {
 		return this.profiles[steamId]?.bans;
@@ -176,7 +207,7 @@ export class AvatarCache {
 		this.checkedAt.set(steamId, now);
 		const p = this.profiles[steamId];
 		const fresh = p && p.name !== undefined && now - p.checked < (want.bans ? BANS_AGE_MS : MAX_AGE_MS);
-		const haveBans = !want.bans || p?.bans !== undefined;
+		const haveBans = !want.bans || this.apiMode || p?.bans !== undefined;
 		// A missing picture is no reason to ask again when the profile has no picture address at all (failed until the retry time).
 		const haveImage = !want.image || this.has(steamId);
 		if (fresh && haveBans && haveImage) return;
@@ -197,14 +228,11 @@ export class AvatarCache {
 			const next: Profile = { ...(before ?? { checked: 0 }), checked: Date.now() };
 			const name = extractPersonaName(xml);
 			if (name) next.name = name;
-			const bans = extractBans(xml);
+			const bans = this.apiMode ? undefined : extractBans(xml);
 			if (bans) next.bans = bans;
 			let changed = name !== before?.name || JSON.stringify(bans) !== JSON.stringify(before?.bans);
 			this.profiles[steamId] = next;
-			if (bans && before?.bans) {
-				if (bans.vac && !before.bans.vac) this.onNewBan(steamId, 'a VAC ban');
-				else if (bans.trade !== before.bans.trade && bans.trade !== 'None') this.onNewBan(steamId, `a trade ban (${bans.trade})`);
-			}
+			if (bans) this.noteNewBan(steamId, before?.bans, bans);
 			if (want.image) {
 				const url = extractAvatarUrl(xml);
 				if (!url) throw new Error('no avatar');
