@@ -301,6 +301,7 @@ function registerIpc(): void {
 				bans: watchBans ? banLabels(avatars.bans(steamId)) : [],
 				tags: meta.get(steamId).tags,
 				sessionDays: accounts.sessionDaysLeft(steamId) ?? null,
+				hasPassword: accounts.hasPassword(steamId),
 				state: st.state,
 				pending: st.state === 'ok' ? st.items.length : null
 			};

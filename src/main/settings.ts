@@ -40,6 +40,8 @@ export interface Settings {
 	layout: Layout;
 	/** A version the user chose to hide the notice for. */
 	updateDismissed: string;
+	/** The "add an API key" banner on the Codes page was dismissed. */
+	hideKeyHint: boolean;
 }
 
 export const DEFAULTS: Settings = {
@@ -61,7 +63,8 @@ export const DEFAULTS: Settings = {
 	checkUpdates: true,
 	sortBy: 'added-asc',
 	layout: 'list',
-	updateDismissed: ''
+	updateDismissed: '',
+	hideKeyHint: false
 };
 
 const oneOf = <T>(v: unknown, allowed: readonly T[], fallback: T): T =>
@@ -93,6 +96,7 @@ export function sanitize(input: unknown): Settings {
 		sortBy: oneOf(o['sortBy'], SORT_OPTIONS, DEFAULTS.sortBy),
 		layout: oneOf(o['layout'], LAYOUT_OPTIONS, DEFAULTS.layout),
 		checkUpdates: typeof o['checkUpdates'] === 'boolean' ? o['checkUpdates'] : DEFAULTS.checkUpdates,
+		hideKeyHint: typeof o['hideKeyHint'] === 'boolean' ? o['hideKeyHint'] : DEFAULTS.hideKeyHint,
 		updateDismissed: typeof o['updateDismissed'] === 'string' && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(o['updateDismissed']) ? o['updateDismissed'] : '',
 		importFolders: Array.isArray(o['importFolders'])
 			? [...new Set(o['importFolders'].filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length < 1024))].slice(0, 20)

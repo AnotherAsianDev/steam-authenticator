@@ -13,6 +13,7 @@ interface Row {
 	bans: string[];
 	/** Days until the saved sign-in runs out, when that is soon and no password is saved to renew it. */
 	sessionDays: number | null;
+	hasPassword: boolean;
 	state: 'idle' | 'loading' | 'ok' | 'signin' | 'error';
 	pending: number | null;
 }
@@ -35,6 +36,7 @@ interface Status {
 interface Settings {
 	theme: 'system' | 'dark' | 'light';
 	checkBans: boolean;
+	hideKeyHint: boolean;
 	sidebarCollapsed: boolean;
 	showSteamId: boolean;
 	showAvatars: boolean;
@@ -232,6 +234,12 @@ const ICONS: Record<string, string> = {
 	'theme-system': '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
 	'theme-light': '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
 	'theme-dark': '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
+	vac: '<path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m9.5 9.5 5 5m0-5-5 5"/>',
+	game: '<rect x="2.5" y="7" width="19" height="10" rx="5"/><path d="M7 10v4M5 12h4M15.5 11h.01M18 13h.01"/><path d="m4 4 16 16"/>',
+	community: '<path d="M4 5h16v11H9l-5 4z"/><path d="m9.5 8.5 5 4m0-4-5 4"/>',
+	trade: '<path d="M4 8h14l-3-3M20 16H6l3 3"/><path d="m4 4 16 16"/>',
+	probation: '<path d="M6 3h12M6 21h12M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9"/>',
+	note: '<path d="M5 4h14v12l-5 5H5z"/><path d="M14 21v-5h5M8 9h8M8 13h4"/>',
 	ban: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>',
 	clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
 	collapse: '<path d="m13 7 5 5-5 5M6 7l5 5-5 5"/>',
@@ -338,6 +346,9 @@ function show(...nodes: Node[]): void {
 	onLogChange = () => undefined;
 	content.replaceChildren(...nodes);
 	content.scrollTop = 0;
+	content.classList.remove('enter');
+	void content.offsetWidth;
+	content.classList.add('enter');
 	setNav();
 }
 
@@ -347,7 +358,7 @@ function toast(message: string, error = false): void {
 	const t = el('div', { class: error ? 'toast error' : 'toast', textContent: message, role: 'status' });
 	document.body.append(t);
 	window.clearTimeout(toastTimer);
-	toastTimer = window.setTimeout(() => t.remove(), 3000);
+	toastTimer = window.setTimeout(() => { t.classList.add('leaving'); window.setTimeout(() => t.remove(), 200); }, 2800);
 }
 
 /** A small notice when a newer release exists. Nothing is downloaded; the button opens the release page. */
@@ -503,7 +514,7 @@ async function navigate(v: typeof view): Promise<void> {
 }
 
 /** A button that must be pressed twice within a few seconds. */
-type MenuItem = { head: string } | 'sep' | { label: string; run: () => void | Promise<void>; danger?: boolean; confirm?: string };
+type MenuItem = { head: string } | 'sep' | { label: string; run: () => void | Promise<void>; danger?: boolean; confirm?: string; disabled?: boolean; hint?: string };
 let closeMenu: () => void = () => undefined;
 /** A small right-click menu at the pointer. Closes on a click elsewhere, Escape, scrolling or when the window loses focus. */
 function showMenu(x: number, y: number, items: MenuItem[]): void {
@@ -518,12 +529,14 @@ function showMenu(x: number, y: number, items: MenuItem[]): void {
 			menu.append(el('div', { class: 'ctx-head', textContent: it.head }));
 			continue;
 		}
-		const b = el('button', { class: `ctx-item${it.danger ? ' danger' : ''}`, type: 'button', role: 'menuitem', textContent: it.label });
+		const b = el('button', { class: `ctx-item${it.danger ? ' danger' : ''}`, type: 'button', role: 'menuitem', disabled: !!it.disabled });
+		b.append(el('span', { textContent: it.label }));
+		if (it.hint) b.append(el('small', { class: 'ctx-hint', textContent: it.hint }));
 		let armed = false;
 		b.addEventListener('click', () => {
 			if (it.confirm && !armed) {
 				armed = true;
-				b.textContent = it.confirm;
+				b.replaceChildren(el('span', { textContent: it.confirm }));
 				return;
 			}
 			closeMenu();
@@ -540,7 +553,7 @@ function showMenu(x: number, y: number, items: MenuItem[]): void {
 		if (e.key === 'Escape') return closeMenu();
 		if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
 		e.preventDefault();
-		const buttons = Array.from(menu.querySelectorAll<HTMLElement>('.ctx-item'));
+		const buttons = Array.from(menu.querySelectorAll<HTMLElement>('.ctx-item:not(:disabled)'));
 		const at = buttons.indexOf(document.activeElement as HTMLElement);
 		buttons[(at + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
 	};
@@ -556,7 +569,7 @@ function showMenu(x: number, y: number, items: MenuItem[]): void {
 	document.addEventListener('keydown', key, true);
 	document.addEventListener('wheel', closeMenu, true);
 	window.addEventListener('blur', closeMenu);
-	menu.querySelector<HTMLElement>('.ctx-item')?.focus();
+	menu.querySelector<HTMLElement>('.ctx-item:not(:disabled)')?.focus();
 }
 
 function confirmButton(label: string, confirmLabel: string, cls: string, run: () => void): HTMLButtonElement {
@@ -711,10 +724,20 @@ function dialog(title: string, text: string, fields: DialogField[], submit: stri
 
 const svgIcon = (name: string, size = 12): string => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
+/** Which icon a ban label gets: each kind of ban has its own. */
+function banIcon(label: string): string {
+	if (label.startsWith('VAC')) return 'vac';
+	if (label.startsWith('Game')) return 'game';
+	if (label.startsWith('Community')) return 'community';
+	if (label.startsWith('Trade probation')) return 'probation';
+	if (label.startsWith('Trade')) return 'trade';
+	return 'ban';
+}
+
 /** The small marks after an account's name: bans, waiting confirmations, sign-in problems, tags. Rebuilt only when something changed, so tooltips do not flicker. */
 function drawFlags(li: HTMLElement, row: Row): void {
 	const box = li.querySelector<HTMLElement>('.flags')!;
-	const key = JSON.stringify([row.state, row.pending, row.bans, row.sessionDays, row.tags]);
+	const key = JSON.stringify([row.state, row.pending, row.bans, row.sessionDays, row.tags, row.note]);
 	if (box.dataset['key'] === key) return;
 	box.dataset['key'] = key;
 	const flag = (cls: string, content: string, title: string, go: () => void): HTMLElement => {
@@ -724,13 +747,13 @@ function drawFlags(li: HTMLElement, row: Row): void {
 	};
 	const detail = (): void => void navigate({ name: 'detail', id: row.steamId });
 	const nodes: HTMLElement[] = [];
-	if (row.bans.length) nodes.push(flag('ban', svgIcon('ban'), `Steam shows: ${row.bans.join(', ')}`, detail));
+	for (const label of row.bans) nodes.push(flag('ban', svgIcon(banIcon(label)), `Steam shows: ${label}`, detail));
 	if (row.state === 'signin') nodes.push(flag('warn', svgIcon('lock'), 'Sign in needed to see confirmations', detail));
 	else if (row.state === 'error') nodes.push(flag('warn', '↻', 'Could not check confirmations. Click for details', detail));
 	else if (row.pending) nodes.push(flag('hot', String(row.pending), `${row.pending} confirmation${row.pending === 1 ? '' : 's'} waiting. Click to review`, () => void navigate({ name: 'confirms' })));
 	if (row.sessionDays !== null) nodes.push(flag('warn', svgIcon('clock'), `The saved sign-in runs out in ${row.sessionDays} day${row.sessionDays === 1 ? '' : 's'}. Save the password to keep it going`, detail));
-	row.tags.slice(0, 2).forEach((t) => nodes.push(el('span', { class: 'tag', textContent: t })));
-	if (row.tags.length > 2) nodes.push(el('span', { class: 'tag', textContent: `+${row.tags.length - 2}`, title: row.tags.slice(2).join(', ') }));
+	if (row.note) nodes.push(flag('note', svgIcon('note'), row.note, detail));
+	if (row.tags[0]) nodes.push(el('span', { class: 'tag', textContent: row.tags[0] }));
 	box.replaceChildren(...nodes);
 }
 
@@ -826,8 +849,8 @@ async function listScreen(): Promise<void> {
 			{ head: 'Copy' },
 			{ label: 'Code', run: async () => { const r = await api.copyCode(id); toast(r.ok ? 'Code copied' : r.error, !r.ok); } },
 			{ label: 'Username', run: copy('username', 'Username copied') },
+			{ label: 'Password', run: copy('password', 'Password copied'), disabled: !row.hasPassword, hint: row.hasPassword ? '' : 'not saved' },
 			{ label: 'SteamID64', run: copy('steamId', 'SteamID64 copied') },
-			{ label: 'Saved password', run: copy('password', 'Password copied') },
 			'sep',
 			{ head: 'Account' },
 			{ label: row.pinned ? 'Unpin' : 'Pin to the top', run: async () => { const r = await api.setMeta(id, { pinned: !row.pinned }); if (!r.ok) return toast(r.error, true); await refresh(); } },
@@ -878,7 +901,20 @@ async function listScreen(): Promise<void> {
 			el('div', { class: 'ov-chips' }, ...(banned ? [el('span', { class: 'ov-chip warn', textContent: `${banned} banned`, title: lastRows.filter((r) => r.bans.length).map((r) => `${r.name}: ${r.bans.join(', ')}`).join('\n') })] : []), ...(chips.length ? chips : [el('span', { class: 'ov-chip good', textContent: 'Everything is complete' })]))
 		);
 	}
-	show(header, strip.node, el('main', {}, overview, filterBar, list, none, empty));
+	const keyBanner = el('div', { class: 'key-banner', role: 'status', hidden: true });
+	if (settings.checkBans && !settings.hideKeyHint) {
+		void api.apiKeyState().then((k) => {
+			if (!k.ok || k.value.has || k.value.locked) return;
+			keyBanner.hidden = false;
+			keyBanner.replaceChildren(
+				el('span', { class: 'kb-ico', innerHTML: svgIcon('community', 16) }),
+				el('div', { class: 'kb-text' }, el('strong', { textContent: 'Add a Steam Web API key' }), el('span', { textContent: 'Without it community bans, game bans and ban dates are not checked, only VAC and trade bans.' })),
+				el('div', { class: 'row-actions' },
+					el('button', { class: 'small', type: 'button', textContent: 'Not now', onclick: () => { keyBanner.classList.add('leaving'); window.setTimeout(() => keyBanner.remove(), 200); void api.setSettings({ hideKeyHint: true }).then((s) => { if (s.ok) settings = s.value; }); } }),
+					el('button', { class: 'small primary', type: 'button', textContent: 'Add key', onclick: () => { void navigate({ name: 'settings' }).then(() => document.querySelector<HTMLElement>('.key-row input')?.focus()); } })));
+		});
+	}
+	show(header, strip.node, el('main', {}, keyBanner, overview, filterBar, list, none, empty));
 
 	async function doImport(): Promise<void> {
 		const r = await api.import();
@@ -936,7 +972,7 @@ async function listScreen(): Promise<void> {
 		} });
 		li.append(
 			el('span', { class: 'avatar-slot' }),
-			el('span', { class: 'who' }, el('span', { class: 'name-line' }, profileLink(row.steamId, row.name, 'name'), el('span', { class: 'flags' })), el('span', { class: 'sid' }), el('span', { class: 'note' })),
+			el('span', { class: 'who' }, el('span', { class: 'name-line' }, profileLink(row.steamId, row.name, 'name'), el('span', { class: 'flags' })), el('span', { class: 'sid' })),
 			code,
 			star,
 			open,
@@ -961,9 +997,6 @@ async function listScreen(): Promise<void> {
 		starBtn.classList.toggle('on', row.pinned);
 		starBtn.title = row.pinned ? 'Unpin' : 'Pin to the top';
 		starBtn.ariaLabel = `${row.pinned ? 'Unpin' : 'Pin'} ${row.name}`;
-		const noteEl = li.querySelector<HTMLElement>('.note')!;
-		noteEl.textContent = row.note;
-		noteEl.hidden = !row.note;
 		li.classList.toggle('banned', row.bans.length > 0);
 		li.dataset['tags'] = row.tags.join('\n');
 		li.dataset['state'] = row.state;
@@ -972,7 +1005,13 @@ async function listScreen(): Promise<void> {
 		const sub = accountSubline(row.name, row.nickname, row.steamId);
 		sid.textContent = sub;
 		sid.hidden = !sub;
-		li.querySelector('.code')!.textContent = row.code;
+		const codeEl = li.querySelector<HTMLElement>('.code')!;
+		if (codeEl.textContent && codeEl.textContent !== row.code) {
+			codeEl.classList.remove('tick');
+			void codeEl.offsetWidth;
+			codeEl.classList.add('tick');
+		}
+		codeEl.textContent = row.code;
 
 		drawFlags(li, row);
 		li.querySelector<HTMLElement>('.bar i')!.style.width = `${(row.remaining / 30) * 100}%`;
@@ -1786,7 +1825,7 @@ async function detailScreen(id: string): Promise<void> {
 	};
 	noteInput.addEventListener('change', () => void saveNote());
 	noteInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') noteInput.blur(); });
-	const tagsInput = el('input', { type: 'text', class: 'search', maxLength: 140, placeholder: 'Tags, separated by commas (up to 6)', value: d.value.tags.join(', '), ariaLabel: 'Tags', spellcheck: false });
+	const tagsInput = el('input', { type: 'text', class: 'search', maxLength: 140, placeholder: 'One tag, for example "trade"', value: d.value.tags.join(', '), ariaLabel: 'Tags', spellcheck: false });
 	tagsInput.addEventListener('change', async () => {
 		const r = await api.setMeta(id, { tags: tagsInput.value });
 		if (!r.ok) return toast(r.error, true);
@@ -1794,7 +1833,7 @@ async function detailScreen(id: string): Promise<void> {
 		toast('Tags saved');
 	});
 	tagsInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tagsInput.blur(); });
-	const noteRow = el('div', { class: 'note-row' }, noteInput, tagsInput, el('div', { class: 'chips' }, pinBtn), el('p', { class: 'hint', textContent: 'The note shows under the name, tags next to it, and the filter searches both. Stored in data/meta.json, not in the maFile.' }));
+	const noteRow = el('div', { class: 'note-row' }, noteInput, tagsInput, el('div', { class: 'chips' }, pinBtn), el('p', { class: 'hint', textContent: 'The note shows as a small icon after the name (hover to read it), the tag next to it, and the filter searches both. Stored in data/meta.json, not in the maFile.' }));
 
 	const body = el('div', { class: 'conf' });
 	const refreshBtn = el('button', { class: 'icon', title: 'Check now', ariaLabel: 'Check for confirmations', textContent: '↻', onclick: async () => {
@@ -2179,7 +2218,7 @@ async function settingsScreen(): Promise<void> {
 async function boot(): Promise<void> {
 	const s = await api.settings();
 	if (s.ok) applySettings(s.value);
-	else applySettings({ theme: 'system', checkBans: true, sidebarCollapsed: true, showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false, checkUpdates: true, sortBy: 'added-asc', layout: 'list', updateDismissed: '' });
+	else applySettings({ theme: 'system', checkBans: true, sidebarCollapsed: true, showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false, checkUpdates: true, sortBy: 'added-asc', layout: 'list', updateDismissed: '', hideKeyHint: false });
 	api.onChanged(() => refreshView());
 	api.onLogChanged(() => {
 		void updateLogCount();

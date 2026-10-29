@@ -8,7 +8,7 @@ export interface AccountMetaEntry {
 }
 export const NOTE_MAX = 120;
 export const TAG_MAX = 20;
-export const TAGS_MAX = 6;
+export const TAGS_MAX = 1;
 
 /** Tags from a list or a comma separated text: trimmed, no # or control characters, unique, limited in length and number. */
 export function cleanTags(value: unknown): string[] {

@@ -34,15 +34,15 @@ describe('account meta', () => {
 		writeFileSync(`${f}.bak`, JSON.stringify({ [ID]: { pinned: true, note: '' } }));
 		expect(new AccountMeta(f).get(ID).pinned).toBe(true);
 	});
-	it('cleans tags: trimmed, no #, unique, at most 6 of 20 characters', () => {
-		expect(cleanTags(' trade , #family,Trade, ')).toEqual(['trade', 'family']);
-		expect(cleanTags(['a', 'b', 'c', 'd', 'e', 'f', 'g'])).toHaveLength(6);
+	it('cleans tags: trimmed, no #, unique, only the first, at most 20 characters', () => {
+		expect(cleanTags(' trade , #family,Trade, ')).toEqual(['trade']);
+		expect(cleanTags(['a', 'b', 'c', 'd', 'e', 'f', 'g'])).toHaveLength(1);
 		expect(cleanTags('x'.repeat(50))[0]).toHaveLength(20);
 		expect(cleanTags(5)).toEqual([]);
 	});
 	it('keeps an account that only has tags', () => {
 		const f = file();
 		new AccountMeta(f).set(ID, { tags: 'alt, trade' });
-		expect(new AccountMeta(f).get(ID).tags).toEqual(['alt', 'trade']);
+		expect(new AccountMeta(f).get(ID).tags).toEqual(['alt']);
 	});
 });

@@ -4,8 +4,11 @@
 - New compact design: smaller rows, avatars and codes so more fits on screen, and a side menu that collapses to icons. Two small icons at the bottom of the menu collapse/expand it and switch the theme (system, light, dark).
 - New "columns" view: compact rows with two or more accounts per line, depending on the window width. Grid and columns use the full window width.
 - Right-click an account: a clean menu in three groups (Copy, Account, Open on Steam) plus Move to trash, with arrow-key navigation.
-- Status marks moved out of the way: bans, waiting confirmations, sign-in problems and tags are now small icons right after the name (hover for the meaning), so rows keep their height. A banned account also gets a red outline.
-- Tags: up to 6 short tags per account (account page), shown next to the name, searched by the filter, with a tag filter menu on the Codes page.
+- Status marks moved out of the way: each kind of ban (VAC, game, community, trade, trade probation) has its own icon, and waiting confirmations, sign-in problems, the note and the tag are small icons right after the name (hover for the meaning), so rows keep their height. The note no longer takes a line under the name. A banned account also gets a red outline.
+- Tags: one short tag per account (account page), shown next to the name, searched by the filter, with a tag filter menu on the Codes page.
+- A banner on the Codes page asks for a Steam Web API key while none is set (what is missing without it is stated); "Not now" hides it for good.
+- Right-click menu: "Password" (was "Saved password") now follows Username and is greyed out with "not saved" when the account has no saved password.
+- Animations: pages and rows fade in, the menu and toasts pop, icons appear with a small bounce, the code pulses when it changes, buttons and rows react to hover and press, theme changes blend. All of it is off when Windows is set to reduce motion.
 - Ban history: what appeared or was lifted and when, on the account page.
 - Sign-in warning: an account without a saved password gets a To do item, an icon and a Health check line when its saved sign-in has 14 days or less left. Saving the password lets the app renew it by itself.
 - Optional Steam Web API key (Settings): checked with Steam before it is saved, can be tested again later or removed. With it, bans (VAC with count, game bans, community bans, trade bans, days since the last ban) come from the official API for all accounts in one request every 12 hours. The key is stored with the saved passwords (encrypted with a master password) and is hidden from the log.
