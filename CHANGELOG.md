@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0
+- Sort the account list (menu next to the filter chips): added oldest first (default), added newest first, name A to Z, name Z to A, most pending confirmations first. The choice is remembered. Name sorting follows what the list shows, so with "Show Steam nickname" on it sorts by nickname.
+- Accounts you added before this version are sorted too: their date is taken from their maFile (the earlier of creation and modification time) the first time this version sees them, and then kept in `data/added.json`. If you copied your folder around, many files can share one time, and those accounts stay in name order among themselves. New accounts get the time they are added.
+
 ## 0.5.1
 - The update check now runs every time the app starts (it used to wait up to a day). If GitHub cannot be reached, the last known answer is used.
 
