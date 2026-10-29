@@ -88,7 +88,6 @@ button:focus-visible, .row:focus-visible, input:focus-visible, select:focus-visi
 	background: var(--surface); border: 1px solid var(--line);
 	transition: border-color 0.15s, transform 0.15s;
 }
-.compact .row { padding-top: 12px; padding-bottom: 16px; }
 .row:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .avatar-slot { display: flex; }
 .avatar {
@@ -432,6 +431,12 @@ label.f .hint.fine { margin: 0; font-size: 12px; }
 .filterbar select.sort { width: auto; font-size: 13px; padding: 5px 10px; border-radius: 999px; color: var(--muted); }
 
 /* compact design */
+body.wide { --gutter: 28px; }
+.list.columns { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 6px 10px; align-items: start; }
+.list.columns .code { font-size: 17px; padding: 3px 9px; }
+.ban-tag { display: inline-block; font-size: 10px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 5px; background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); margin: 2px 4px 0 0; white-space: nowrap; }
+.bans { display: block; }
+.row.banned { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
 :root { --gutter: max(20px, calc((100% - 880px) / 2)); }
 .shell { transition: grid-template-columns 0.15s; }
 .shell.collapsed { grid-template-columns: 60px 1fr; }

@@ -1,17 +1,18 @@
 import { cleanFields } from './exporter';
 import { writeFileAtomic } from './atomic';
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 export const SORT_OPTIONS = ['added-asc', 'added-desc', 'name-asc', 'name-desc', 'pending'] as const;
 export type SortBy = (typeof SORT_OPTIONS)[number];
-export const LAYOUT_OPTIONS = ['list', 'grid'] as const;
+export const LAYOUT_OPTIONS = ['list', 'columns', 'grid'] as const;
 export type Layout = (typeof LAYOUT_OPTIONS)[number];
 
 export interface Settings {
 	theme: 'system' | 'dark' | 'light';
-	density: 'comfortable' | 'compact';
 	/** The side menu shows only icons. */
 	sidebarCollapsed: boolean;
+	/** Read VAC and trade ban state from the public profile (no extra request). */
+	checkBans: boolean;
 	showSteamId: boolean;
 	showAvatars: boolean;
 	/** Show the Steam profile name instead of the login name; the login name moves to the second line. */
@@ -43,7 +44,7 @@ export interface Settings {
 
 export const DEFAULTS: Settings = {
 	theme: 'system',
-	density: 'comfortable',
+	checkBans: true,
 	sidebarCollapsed: true,
 	showSteamId: false,
 	showAvatars: true,
@@ -71,7 +72,7 @@ export function sanitize(input: unknown): Settings {
 	const o = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
 	return {
 		theme: oneOf(o['theme'], ['system', 'dark', 'light'] as const, DEFAULTS.theme),
-		density: oneOf(o['density'], ['comfortable', 'compact'] as const, DEFAULTS.density),
+		checkBans: typeof o['checkBans'] === 'boolean' ? o['checkBans'] : DEFAULTS.checkBans,
 		sidebarCollapsed: typeof o['sidebarCollapsed'] === 'boolean' ? o['sidebarCollapsed'] : DEFAULTS.sidebarCollapsed,
 		showSteamId: typeof o['showSteamId'] === 'boolean' ? o['showSteamId'] : DEFAULTS.showSteamId,
 		showAvatars: typeof o['showAvatars'] === 'boolean' ? o['showAvatars'] : DEFAULTS.showAvatars,

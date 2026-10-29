@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0
+- New compact design: smaller rows, avatars and codes so more fits on screen, and a side menu that collapses to icons (button at its bottom; the choice is remembered).
+- Theme switch in the side menu: system, light or dark. Same choice as in Settings.
+- New "columns" view: the list layout with two or more accounts per line, depending on the window width. Grid and columns use the full window width.
+- Ban check: the public profile page that is already read for the name and picture also says whether an account has a VAC ban or a trade ban. Such accounts get a red tag in the list, a "banned" chip in the overview, a section on the account page and a line in the Health check, and a new ban is reported as soon as it is seen. Profiles are now read about every 12 hours per account instead of weekly (one request each, the picture only when it changed). Turn it off with Settings, Watch for bans. Community bans and game bans are not part of that page; see the notes.
+- Export, Codes and the account page: pinned accounts first, as before.
+- Cleanup: removed the Density setting (the design is compact now), unused code and imports, and merged the profile name and picture address files into one `data/avatars/profiles.json` (older files are read once and carried over). The build now fails on unused code.
+- Fixed the star overlapping the details arrow in the grid layout.
+
 ## 0.8.0
 - Pin accounts: a star on each account keeps it at the top of the Codes page, the Confirmations page and the Export list, whatever the sort.
 - Notes: a short note per account (set on the account page, up to 120 characters) shown under the name and searched by the filter. Pins and notes are stored in `data/meta.json`; the maFiles are not touched.

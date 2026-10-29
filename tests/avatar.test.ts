@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AvatarCache, extractPersonaName } from '../src/main/avatar';
+import { AvatarCache, extractBans, extractPersonaName, isBanned } from '../src/main/avatar';
 
 const ID = '76561198000000001';
 const xml = (name: string) => `<profile><steamID64>${ID}</steamID64><steamID><![CDATA[${name}]]></steamID><avatarFull><![CDATA[https://avatars.steamstatic.com/abc_full.jpg]]></avatarFull></profile>`;
@@ -29,16 +29,53 @@ describe('profile name', () => {
 		const dir = mkdtempSync(join(tmpdir(), 'av-'));
 		const cache = new AvatarCache(dir, () => undefined, 'https://example.test/profiles');
 		expect(cache.nickname(ID)).toBeUndefined();
-		cache.ensure(ID);
+		cache.ensure(ID, { image: true, bans: true });
 		for (let i = 0; i < 50 && !cache.has(ID); i++) await new Promise((r) => setTimeout(r, 20));
 		expect(cache.nickname(ID)).toBe('Olam');
-		expect(JSON.parse(readFileSync(join(dir, 'names.json'), 'utf8'))).toEqual({ [ID]: 'Olam' });
+		expect(JSON.parse(readFileSync(join(dir, 'profiles.json'), 'utf8'))[ID].name).toBe('Olam');
 		expect(new AvatarCache(dir).nickname(ID)).toBe('Olam');
 		// Nothing more is asked while everything is fresh.
 		const before = hits;
 		cache.recheck();
-		cache.ensure(ID);
+		cache.ensure(ID, { image: true, bans: true });
 		await new Promise((r) => setTimeout(r, 50));
 		expect(hits).toBe(before);
+	});
+});
+
+describe('bans', () => {
+	const withBans = (vac: number, trade: string, limited = 0) => `${xml('Olam')}<vacBanned>${vac}</vacBanned><tradeBanState>${trade}</tradeBanState><isLimitedAccount>${limited}</isLimitedAccount>`;
+	it('reads VAC, trade and limited state from the profile XML', () => {
+		expect(extractBans(withBans(1, 'Banned', 1))).toEqual({ vac: true, trade: 'Banned', limited: true });
+		expect(extractBans(withBans(0, 'None'))).toEqual({ vac: false, trade: 'None', limited: false });
+		expect(extractBans('<response><error>not found</error></response>')).toBeUndefined();
+	});
+	it('only a VAC ban or an active trade ban counts', () => {
+		expect(isBanned(extractBans(withBans(0, 'None', 1)))).toBe(false);
+		expect(isBanned(extractBans(withBans(1, 'None')))).toBe(true);
+		expect(isBanned(extractBans(withBans(0, 'Probation')))).toBe(true);
+		expect(isBanned(undefined)).toBe(false);
+	});
+	it('reports a ban that appears later, without a second request for the picture', async () => {
+		let state = withBans(0, 'None');
+		let images = 0;
+		vi.stubGlobal('fetch', async (url: string) => {
+			if (String(url).includes('?xml=1')) return new Response(state);
+			images++;
+			return new Response(Buffer.from([1, 2, 3]));
+		});
+		const news: string[] = [];
+		const dir = mkdtempSync(join(tmpdir(), 'av-'));
+		const cache = new AvatarCache(dir, () => undefined, 'https://example.test/profiles', (_id, what) => news.push(what));
+		const want = { image: true, bans: true };
+		cache.ensure(ID, want);
+		for (let i = 0; i < 100 && !cache.has(ID); i++) await new Promise((r) => setTimeout(r, 20));
+		expect(cache.bans(ID)?.vac).toBe(false);
+		state = withBans(1, 'None');
+		cache.refreshAll();
+		cache.ensure(ID, want);
+		for (let i = 0; i < 200 && !cache.bans(ID)?.vac; i++) await new Promise((r) => setTimeout(r, 20));
+		expect(news).toEqual(['a VAC ban']);
+		expect(images).toBe(1);
 	});
 });

@@ -5,7 +5,7 @@ import { Accounts } from './accounts';
 import { describeWriteError } from './atomic';
 import { AccountMeta } from './meta';
 import { UserError } from './errors';
-import { AvatarCache } from './avatar';
+import { AvatarCache, type Bans } from './avatar';
 import { findMaFileFolders, importFolder, normalizeStoreFolder, readMaFile } from './autoimport';
 import { CredentialStore } from './credentials';
 import { FolderWatcher } from './watcher';
@@ -69,7 +69,11 @@ let win: BrowserWindow | null = null;
 
 const credentials = new CredentialStore(join(data, 'credentials.json'), vault);
 const tokens = new TokenStore(join(data, 'sessions.json'), vault);
-const avatars = new AvatarCache(join(data, 'avatars'), () => win?.webContents.send('changed'));
+const avatars = new AvatarCache(join(data, 'avatars'), () => win?.webContents.send('changed'), undefined, (steamId, what) => {
+	const name = accounts.get(steamId)?.accountName ?? steamId;
+	log.warn('bans', `${name} now has ${what}`);
+	notice(`${name} now has ${what}`, true);
+});
 const accounts = new Accounts({
 	cache: new StateCache(join(data, 'cache.json')),
 	store,
@@ -166,6 +170,12 @@ function handle<T>(channel: string, fn: (...args: any[]) => T | Promise<T>): voi
 	});
 }
 
+/** Short texts for what is wrong with an account on Steam's side (empty when nothing is). */
+function bannedLabels(b: Bans | undefined): string[] {
+	if (!b) return [];
+	return [b.vac ? 'VAC ban' : '', b.trade === 'Banned' ? 'Trade ban' : b.trade === 'Probation' ? 'Trade probation' : ''].filter(Boolean);
+}
+
 const publicStatus = (id: string) => {
 	const s = accounts.status(id);
 	return {
@@ -234,12 +244,13 @@ function registerIpc(): void {
 		await Promise.race([clockReady, new Promise((r) => setTimeout(r, 1500))]);
 		const t = steamNow();
 		const showAvatars = settings.get().showAvatars;
-		const wantProfiles = showAvatars || settings.get().showNickname;
+		const watchBans = settings.get().checkBans;
+		const wantProfiles = showAvatars || settings.get().showNickname || watchBans;
 		const ids = accounts.ids();
 		const rows = ids.map((steamId) => {
 			const a = accounts.get(steamId)!;
 			const st = accounts.status(steamId);
-			if (wantProfiles) avatars.ensure(steamId, showAvatars);
+			if (wantProfiles) avatars.ensure(steamId, { image: showAvatars, bans: watchBans });
 			return {
 				steamId,
 				addedAt: addedDates.get(steamId, () => store.fileTime(steamId)),
@@ -250,6 +261,7 @@ function registerIpc(): void {
 				remaining: secondsRemaining(t),
 				hasAvatar: showAvatars && avatars.has(steamId),
 				nickname: avatars.nickname(steamId) ?? null,
+				bans: watchBans ? bannedLabels(avatars.bans(steamId)) : [],
 				state: st.state,
 				pending: st.state === 'ok' ? st.items.length : null
 			};
@@ -281,7 +293,7 @@ function registerIpc(): void {
 	});
 	handle('detail', (steamId: unknown) => {
 		const a = accounts.get(known(steamId))!;
-		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note };
+		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note, bans: bannedLabels(avatars.bans(a.steamId)) };
 	});
 	handle('setMeta', (steamId: unknown, patch: unknown) => {
 		const id = known(steamId);
@@ -290,6 +302,7 @@ function registerIpc(): void {
 	});
 	handle('healthCheck', async () => {
 		await syncClock();
+		avatars.refreshAll();
 		const skew = clockOffset();
 		const rows = accounts.ids().map((steamId) => {
 			const a = accounts.get(steamId)!;
@@ -309,6 +322,9 @@ function registerIpc(): void {
 			if (st.state === 'signin') warn.push('Needs a sign-in to show confirmations');
 			else if (st.state === 'error') warn.push(st.message ?? 'Confirmations could not be checked');
 			if (!accounts.hasPassword(steamId)) warn.push('No saved password');
+			const bl = bannedLabels(avatars.bans(steamId));
+			if (bl.length) bad.push(`Steam shows: ${bl.join(', ')}`);
+			if (avatars.bans(steamId)?.limited) warn.push('Steam marks this account as limited');
 			if (!a.revocationCode) warn.push('No revocation code (you cannot remove the authenticator without it)');
 			return { steamId, name: a.accountName, nickname: avatars.nickname(steamId) ?? null, level: bad.length ? 'bad' : warn.length ? 'warn' : 'ok', issues: [...bad, ...warn] };
 		});

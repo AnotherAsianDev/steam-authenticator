@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { writeFileAtomic } from './atomic';
 import { UserError } from './errors';
 import { log } from './log';

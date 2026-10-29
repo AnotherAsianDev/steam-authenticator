@@ -9,6 +9,7 @@ interface Row {
 	hasAvatar: boolean;
 	pinned: boolean;
 	note: string;
+	bans: string[];
 	state: 'idle' | 'loading' | 'ok' | 'signin' | 'error';
 	pending: number | null;
 }
@@ -30,7 +31,7 @@ interface Status {
 }
 interface Settings {
 	theme: 'system' | 'dark' | 'light';
-	density: 'comfortable' | 'compact';
+	checkBans: boolean;
 	sidebarCollapsed: boolean;
 	showSteamId: boolean;
 	showAvatars: boolean;
@@ -41,7 +42,7 @@ interface Settings {
 	autoDetect: boolean;
 	checkUpdates: boolean;
 	sortBy: SortBy;
-	layout: 'list' | 'grid';
+	layout: 'list' | 'columns' | 'grid';
 	updateDismissed: string;
 	importFolders: string[];
 	todoIgnored: string[];
@@ -117,7 +118,7 @@ declare const api: {
 	avatar(id: string): P<string | null>;
 	copyCode(id: string): P<void>;
 	copyField(id: string, field: string): P<void>;
-	detail(id: string): P<{ steamId: string; name: string; nickname: string | null; hasRevocation: boolean; hasPassword: boolean; pinned: boolean; note: string }>;
+	detail(id: string): P<{ steamId: string; name: string; nickname: string | null; hasRevocation: boolean; hasPassword: boolean; pinned: boolean; note: string; bans: string[] }>;
 	setMeta(id: string, patch: { pinned?: boolean; note?: string }): P<{ pinned: boolean; note: string }>;
 	healthCheck(): P<{ skew: number; rows: { steamId: string; name: string; nickname: string | null; level: 'ok' | 'warn' | 'bad'; issues: string[] }[] }>;
 	confirmations(id: string): P<Status>;
@@ -220,6 +221,9 @@ const ICONS: Record<string, string> = {
 	add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
 	settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
 	log: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+	'theme-system': '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+	'theme-light': '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+	'theme-dark': '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
 	collapse: '<path d="m13 7 5 5-5 5M6 7l5 5-5 5"/>',
 	lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 	trash: '<path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3"/>',
@@ -289,6 +293,11 @@ function buildShell(): void {
 			item('trash', 'Trash', () => void navigate({ name: 'trash' })),
 			item('log', 'Log', () => void navigate({ name: 'log' }), true),
 			item('settings', 'Settings', () => void navigate({ name: 'settings' })),
+			el('button', { class: 'nav theme', type: 'button', onclick: async () => {
+				const next = ({ system: 'light', light: 'dark', dark: 'system' } as const)[settings.theme];
+				const r = await api.setSettings({ theme: next });
+				if (r.ok) applySettings(r.value);
+			} }, el('span', { class: 'ico' }), el('span', { class: 'label', textContent: 'Theme' })),
 			(() => {
 				const b = el('button', { class: 'nav collapse', type: 'button', onclick: async () => {
 					const r = await api.setSettings({ sidebarCollapsed: !settings.sidebarCollapsed });
@@ -353,7 +362,15 @@ function applySettings(s: Settings): void {
 	settings = s;
 	if (s.theme === 'system') delete document.documentElement.dataset['theme'];
 	else document.documentElement.dataset['theme'] = s.theme;
-	document.body.classList.toggle('compact', s.density === 'compact');
+	document.body.classList.toggle('wide', s.layout !== 'list');
+	const th = document.querySelector<HTMLElement>('.nav.theme');
+	if (th) {
+		const label = { system: 'Theme: system', light: 'Theme: light', dark: 'Theme: dark' }[s.theme];
+		th.title = `${label}. Click to change`;
+		th.setAttribute('aria-label', th.title);
+		th.querySelector('.label')!.textContent = label;
+		th.querySelector('.ico')!.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[`theme-${s.theme}`]}</svg>`;
+	}
 	document.querySelector('.shell')?.classList.toggle('collapsed', s.sidebarCollapsed);
 	const t = document.querySelector<HTMLElement>('.nav.collapse');
 	if (t) {
@@ -692,9 +709,9 @@ async function listScreen(): Promise<void> {
 			if (li) list.append(li);
 		}
 	}
-	const layoutBtns = (['list', 'grid'] as const).map((l) =>
+	const layoutBtns = (['list', 'columns', 'grid'] as const).map((l) =>
 		el('button', {
-			class: 'seg', type: 'button', title: l === 'list' ? 'List' : 'Grid', ariaLabel: l === 'list' ? 'List layout' : 'Grid layout', textContent: l === 'list' ? '☰' : '▦',
+			class: 'seg', type: 'button', title: { list: 'List', columns: 'Columns', grid: 'Grid' }[l], ariaLabel: `${l} layout`, textContent: { list: '☰', columns: '▥', grid: '▦' }[l],
 			onclick: async () => {
 				const r = await api.setSettings({ layout: l });
 				if (!r.ok) return toast(r.error, true);
@@ -704,7 +721,8 @@ async function listScreen(): Promise<void> {
 		}));
 	function drawLayout(): void {
 		list.classList.toggle('grid', settings.layout === 'grid');
-		layoutBtns.forEach((b, i) => b.classList.toggle('on', (i === 0 ? 'list' : 'grid') === settings.layout));
+		list.classList.toggle('columns', settings.layout === 'columns');
+		layoutBtns.forEach((b, i) => b.classList.toggle('on', (['list', 'columns', 'grid'] as const)[i] === settings.layout));
 	}
 	drawLayout();
 	const filterBar = el('div', { class: 'filterbar' }, search, el('div', { class: 'filter-line' }, chipRow, el('span', { class: 'seg-group' }, ...layoutBtns), sortSelect));
@@ -713,12 +731,13 @@ async function listScreen(): Promise<void> {
 	function drawOverview(total: number, todo: TodoItem[] | undefined): void {
 		overview.hidden = total === 0 || !todo;
 		if (!todo) return;
+		const banned = lastRows.filter((r) => r.bans.length).length;
 		const count = (k: TodoItem['kind']): number => todo.filter((t) => t.kind === k).length;
 		const defs: [TodoItem['kind'], string][] = [['signin', 'need sign-in'], ['password', 'without password'], ['revocation', 'without revocation code'], ['activation', 'not activated']];
 		const chips = defs.filter(([k]) => count(k) > 0).map(([k, text]) => el('button', { class: 'ov-chip warn', type: 'button', title: 'Open the To do list', textContent: `${count(k)} ${text}`, onclick: () => void navigate({ name: 'todo' }) }));
 		overview.replaceChildren(
 			el('div', { class: 'ov-total' }, el('strong', { textContent: String(total) }), el('span', { textContent: total === 1 ? 'account' : 'accounts' })),
-			el('div', { class: 'ov-chips' }, ...(chips.length ? chips : [el('span', { class: 'ov-chip good', textContent: 'Everything is complete' })]))
+			el('div', { class: 'ov-chips' }, ...(banned ? [el('span', { class: 'ov-chip warn', textContent: `${banned} banned`, title: lastRows.filter((r) => r.bans.length).map((r) => `${r.name}: ${r.bans.join(', ')}`).join('\n') })] : []), ...(chips.length ? chips : [el('span', { class: 'ov-chip good', textContent: 'Everything is complete' })]))
 		);
 	}
 	show(header, strip.node, el('main', {}, overview, filterBar, list, none, empty));
@@ -779,7 +798,7 @@ async function listScreen(): Promise<void> {
 		} });
 		li.append(
 			el('span', { class: 'avatar-slot' }),
-			el('span', { class: 'who' }, profileLink(row.steamId, row.name, 'name'), el('span', { class: 'sid' }), el('span', { class: 'note' })),
+			el('span', { class: 'who' }, profileLink(row.steamId, row.name, 'name'), el('span', { class: 'sid' }), el('span', { class: 'note' }), el('span', { class: 'bans' })),
 			badge,
 			code,
 			star,
@@ -808,6 +827,10 @@ async function listScreen(): Promise<void> {
 		const noteEl = li.querySelector<HTMLElement>('.note')!;
 		noteEl.textContent = row.note;
 		noteEl.hidden = !row.note;
+		const bansEl = li.querySelector<HTMLElement>('.bans')!;
+		bansEl.replaceChildren(...row.bans.map((b) => el('span', { class: 'ban-tag', textContent: b })));
+		bansEl.hidden = row.bans.length === 0;
+		li.classList.toggle('banned', row.bans.length > 0);
 		li.dataset['state'] = row.state;
 		li.dataset['pending'] = String(row.pending ?? 0);
 		const sid = li.querySelector<HTMLElement>('.sid')!;
@@ -1690,6 +1713,7 @@ async function detailScreen(id: string): Promise<void> {
 				'div',
 				{ class: 'groups' },
 				el('section', { class: 'group profile-card' }, profile),
+				...(d.value.bans.length ? [el('section', { class: 'group ban-box' }, el('h2', { class: 'todo-title', textContent: 'Steam shows' }), el('div', { class: 'chips' }, ...d.value.bans.map((b) => el('span', { class: 'ban-tag', textContent: b }))), el('p', { class: 'hint', textContent: 'As of the last time the public profile was read. Turn this off under Settings, Watch for bans.' }))] : []),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Note' }), noteRow),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Copy' }), chips, pwBlock),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Open on Steam, signed in' }), webBar, el('p', { class: 'hint', textContent: 'Opens a separate window that is already logged in as this account. Nothing is kept when you close it.' })),
@@ -1928,7 +1952,7 @@ async function settingsScreen(): Promise<void> {
 			{ class: 'settings' },
 			el('h2', { textContent: 'Appearance' }),
 			row('Theme', '', select(s.theme, [['system', 'System'], ['dark', 'Dark'], ['light', 'Light']], (v) => void set({ theme: v }), 'Theme')),
-			row('Density', '', select(s.density, [['comfortable', 'Comfortable'], ['compact', 'Compact']], (v) => void set({ density: v }), 'Density')),
+			row('Watch for bans', 'VAC and trade bans, read from the same public profile page as the name and picture (about every 12 hours per account, no extra request). A new ban is reported as soon as it is seen', toggle(s.checkBans, (v) => void set({ checkBans: v }), 'Watch for bans')),
 			row('Show Steam nickname', 'Instead of the login name, which then appears under it. Taken from the public profile', toggle(s.showNickname, (v) => void set({ showNickname: v }), 'Show Steam nickname')),
 			row('Show SteamID64', 'Under each account name', toggle(s.showSteamId, (v) => void set({ showSteamId: v }), 'Show SteamID64')),
 			row('Show profile pictures', 'Fetched from the public profile, at most once a week per account', toggle(s.showAvatars, (v) => void set({ showAvatars: v }), 'Show profile pictures')),
@@ -1976,7 +2000,7 @@ async function settingsScreen(): Promise<void> {
 async function boot(): Promise<void> {
 	const s = await api.settings();
 	if (s.ok) applySettings(s.value);
-	else applySettings({ theme: 'system', density: 'comfortable', sidebarCollapsed: true, showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false, checkUpdates: true, sortBy: 'added-asc', layout: 'list', updateDismissed: '' });
+	else applySettings({ theme: 'system', checkBans: true, sidebarCollapsed: true, showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false, checkUpdates: true, sortBy: 'added-asc', layout: 'list', updateDismissed: '' });
 	api.onChanged(() => refreshView());
 	api.onLogChanged(() => {
 		void updateLogCount();

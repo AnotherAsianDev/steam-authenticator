@@ -69,7 +69,7 @@ describe('importLines', () => {
 });
 
 describe('importOne', () => {
-	const deps = (saved: string[]) => ({ signIn: async () => token(ID), steamNow: () => 1, exists: () => false, save: (id: string, maFile: string) => void saved.push(maFile), pause: async () => undefined });
+	const deps = (saved: string[]) => ({ signIn: async () => token(ID), steamNow: () => 1, exists: () => false, save: (_id: string, maFile: string) => void saved.push(maFile), pause: async () => undefined });
 	const good = { username: ' olam ', password: 'pw', sharedSecret: SS, identitySecret: IS };
 	it('adds one account and keeps an optional revocation code', async () => {
 		const { importOne } = await import('../src/main/lineimport');
