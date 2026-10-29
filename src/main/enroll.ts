@@ -1,4 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { writeFileAtomic } from './atomic';
 import { join } from 'node:path';
 import { NetworkError, UserError } from './errors';
 import { log } from './log';
@@ -407,9 +408,7 @@ export class Enrollment {
 	private writePending(text: string): void {
 		mkdirSync(this.d.pendingDir, { recursive: true });
 		const target = this.pendingPath(this.steamId);
-		const tmp = `${target}.tmp`;
-		writeFileSync(tmp, text, { mode: 0o600 });
-		renameSync(tmp, target);
+		writeFileAtomic(target, text, { mode: 0o600 });
 		try {
 			chmodSync(target, 0o600);
 		} catch {

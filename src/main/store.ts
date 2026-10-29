@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeFileAtomic } from './atomic';
 
 /**
  * Plain maFiles in one folder the app owns:
@@ -17,13 +18,9 @@ export class MaFileStore {
 		return join(this.dir, `${steamId}.maFile`);
 	}
 
-	/** Atomic write (temp file, then rename), readable by the current user only. */
+	/** Atomic write (flushed temp file, then rename), readable by the current user only. A file it replaces is kept once as .bak. */
 	save(steamId: string, text: string): void {
-		mkdirSync(this.dir, { recursive: true });
-		const target = this.path(steamId);
-		const tmp = `${target}.tmp`;
-		writeFileSync(tmp, text, { mode: 0o600 });
-		renameSync(tmp, target);
+		writeFileAtomic(this.path(steamId), text, { mode: 0o600, backup: true });
 	}
 
 	has(steamId: string): boolean {

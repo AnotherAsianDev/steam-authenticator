@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { writeFileAtomic } from './atomic';
 import type { Confirmation } from './confirmations';
 
 export interface CachedStatus {
@@ -56,9 +57,7 @@ export class StateCache {
 	}
 	private save(): void {
 		try {
-			const tmp = `${this.file}.tmp`;
-			writeFileSync(tmp, JSON.stringify(this.data), { mode: 0o600 });
-			renameSync(tmp, this.file);
+			writeFileAtomic(this.file, JSON.stringify(this.data), { mode: 0o600 });
 		} catch {
 			/* caching is best effort */
 		}

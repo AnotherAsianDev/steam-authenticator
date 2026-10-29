@@ -1,8 +1,11 @@
 import { cleanFields } from './exporter';
+import { writeFileAtomic } from './atomic';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 
 export const SORT_OPTIONS = ['added-asc', 'added-desc', 'name-asc', 'name-desc', 'pending'] as const;
 export type SortBy = (typeof SORT_OPTIONS)[number];
+export const LAYOUT_OPTIONS = ['list', 'grid'] as const;
+export type Layout = (typeof LAYOUT_OPTIONS)[number];
 
 export interface Settings {
 	theme: 'system' | 'dark' | 'light';
@@ -30,6 +33,8 @@ export interface Settings {
 	checkUpdates: boolean;
 	/** Order of the account list. */
 	sortBy: SortBy;
+	/** How the accounts are arranged on the Codes page. */
+	layout: Layout;
 	/** A version the user chose to hide the notice for. */
 	updateDismissed: string;
 }
@@ -51,6 +56,7 @@ export const DEFAULTS: Settings = {
 	exportSkipIncomplete: false,
 	checkUpdates: true,
 	sortBy: 'added-asc',
+	layout: 'list',
 	updateDismissed: ''
 };
 
@@ -80,6 +86,7 @@ export function sanitize(input: unknown): Settings {
 				: DEFAULTS.exportDelimiter,
 		exportSkipIncomplete: typeof o['exportSkipIncomplete'] === 'boolean' ? o['exportSkipIncomplete'] : DEFAULTS.exportSkipIncomplete,
 		sortBy: oneOf(o['sortBy'], SORT_OPTIONS, DEFAULTS.sortBy),
+		layout: oneOf(o['layout'], LAYOUT_OPTIONS, DEFAULTS.layout),
 		checkUpdates: typeof o['checkUpdates'] === 'boolean' ? o['checkUpdates'] : DEFAULTS.checkUpdates,
 		updateDismissed: typeof o['updateDismissed'] === 'string' && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(o['updateDismissed']) ? o['updateDismissed'] : '',
 		importFolders: Array.isArray(o['importFolders'])
@@ -105,9 +112,7 @@ export class SettingsStore {
 	update(patch: unknown): Settings {
 		const p = typeof patch === 'object' && patch !== null ? patch : {};
 		this.current = sanitize({ ...this.current, ...p });
-		const tmp = `${this.file}.tmp`;
-		writeFileSync(tmp, JSON.stringify(this.current, null, 2));
-		renameSync(tmp, this.file);
+		writeFileAtomic(this.file, JSON.stringify(this.current, null, 2), { backup: true });
 		return this.current;
 	}
 }

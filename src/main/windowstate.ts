@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { writeFileAtomic } from './atomic';
 
 export interface WindowState {
 	x?: number;
@@ -34,9 +35,7 @@ export function loadWindowState(file: string): WindowState | undefined {
 
 export function saveWindowState(file: string, s: WindowState): void {
 	try {
-		const tmp = `${file}.tmp`;
-		writeFileSync(tmp, JSON.stringify(s));
-		renameSync(tmp, file);
+		writeFileAtomic(file, JSON.stringify(s));
 	} catch {
 		/* remembering the window is a nicety */
 	}

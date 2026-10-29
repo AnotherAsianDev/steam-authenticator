@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+- Layouts: a switch next to the sort menu on the Codes page toggles between the list and a grid of cards (code in the middle of each card). The choice is remembered.
+- Export shows the same big name as the Codes page (the Steam nickname if "Show Steam nickname" is on, else the login name), with the login name and SteamID under it, and sorts by that name.
+- Export has a filter box. Accounts you filter out of view keep their selection; All and None only act on the accounts currently shown, and a counter shows how many are selected.
+- Fewer Steam requests: when profile pictures are off, only the profile XML (for the nickname) is fetched and no image; when the picture address has not changed since last time, the picture is not downloaded again.
+- Data safety: all files are written through a temporary file and flushed to disk before they replace the old one, so a crash or power loss cannot leave a half-written file. maFiles, the vault, saved passwords, sign-in tokens and settings also keep the previous copy as `.bak`.
+- A damaged `credentials.json`, `sessions.json` or `vault.json` is no longer treated as empty: the `.bak` copy is used, and if there is none the file is left untouched and changes are refused with a clear message (it used to be overwritten by the next save).
+- Crash handling: if the window process crashes it is reloaded; unexpected errors are written to the log; a disk-full or read-only folder gives a plain message; a failure during start-up shows a message instead of dying silently.
+
 ## 0.6.3
 - With "Show Steam nickname" on, the login name is now shown under the name for every account, also when the nickname happens to be the same as the login name.
 

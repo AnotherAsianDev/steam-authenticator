@@ -1,7 +1,9 @@
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { writeFileAtomic } from './atomic';
 import { UserError } from './errors';
+import { log } from './log';
 
 /**
  * Optional master password for the files that hold sign-in secrets
@@ -48,10 +50,7 @@ const isSealed = (o: unknown): o is Sealed =>
 	typeof o === 'object' && o !== null && ['iv', 'tag', 'data'].every((k) => typeof (o as Record<string, unknown>)[k] === 'string');
 
 function writeAtomic(file: string, text: string): void {
-	mkdirSync(dirname(file), { recursive: true });
-	const tmp = `${file}.tmp`;
-	writeFileSync(tmp, text, { mode: 0o600 });
-	renameSync(tmp, file);
+	writeFileAtomic(file, text, { mode: 0o600, backup: true });
 }
 
 export function checkPassword(password: string): void {
@@ -74,13 +73,20 @@ export class Vault {
 	private dek: Buffer | undefined;
 
 	constructor(readonly file: string) {
-		try {
-			if (existsSync(file)) {
-				const m = JSON.parse(readFileSync(file, 'utf8')) as Partial<Meta>;
-				if (m.v === 1 && typeof m.id === 'string' && typeof m.salt === 'string' && m.kdf && isSealed(m)) this.meta = m as Meta;
+		const load = (path: string): Meta | undefined => {
+			try {
+				if (!existsSync(path)) return undefined;
+				const m = JSON.parse(readFileSync(path, 'utf8')) as Partial<Meta>;
+				return m.v === 1 && typeof m.id === 'string' && typeof m.salt === 'string' && m.kdf && isSealed(m) ? (m as Meta) : undefined;
+			} catch {
+				return undefined;
 			}
-		} catch {
-			/* an unreadable vault file is treated as absent; the encrypted files then stay locked and untouched */
+		};
+		this.meta = load(file);
+		if (!this.meta && existsSync(file)) {
+			// The vault file is damaged: the copy kept before the last change still opens the same data.
+			this.meta = load(`${file}.bak`);
+			if (this.meta) log.warn('vault', 'vault.json was damaged; the earlier copy (vault.json.bak) is used');
 		}
 	}
 
@@ -195,29 +201,71 @@ export function parseEnvelope(text: string): Sealed | undefined {
  */
 export class SecretFile {
 	locked = false;
+	/** The content is there but is not valid; writes are refused so it is never replaced by an empty one. */
+	damaged = false;
 	constructor(
 		private readonly file: string,
 		private readonly label: string,
 		private readonly vault?: Vault
 	) {}
 
-	read(): string | undefined {
-		this.locked = false;
-		if (!existsSync(this.file)) return undefined;
-		const text = readFileSync(this.file, 'utf8');
+	/** Content of one file, or undefined when it does not exist or cannot be opened (then `locked`). */
+	private decode(path: string): string | undefined {
+		if (!existsSync(path)) return undefined;
+		const text = readFileSync(path, 'utf8');
 		const env = parseEnvelope(text);
 		if (!env) return text;
+		if (!this.vault) throw new Error('sealed file without a vault');
+		return this.vault.openEnvelope(this.label, env);
+	}
+
+	read(): string | undefined {
+		this.locked = false;
 		try {
-			if (!this.vault) throw new Error('sealed file without a vault');
-			return this.vault.openEnvelope(this.label, env);
+			return this.decode(this.file);
 		} catch {
 			this.locked = true;
 			return undefined;
 		}
 	}
 
+	/**
+	 * The file as a JSON object. If it is damaged, the copy kept before the last change is tried;
+	 * if that is unusable too the file is left exactly as it is and further writes are refused.
+	 */
+	readJson(): Record<string, unknown> | undefined {
+		this.damaged = false;
+		const text = this.read();
+		if (this.locked || text === undefined) return undefined;
+		const parse = (t: string | undefined): Record<string, unknown> | undefined => {
+			if (!t) return undefined;
+			try {
+				const o = JSON.parse(t) as unknown;
+				return typeof o === 'object' && o !== null && !Array.isArray(o) ? (o as Record<string, unknown>) : undefined;
+			} catch {
+				return undefined;
+			}
+		};
+		const main = parse(text);
+		if (main) return main;
+		if (text.trim() === '') return undefined; // an empty file is just empty
+		try {
+			const backup = parse(this.decode(`${this.file}.bak`));
+			if (backup) {
+				log.warn('app', `${this.label}: the file was damaged; the earlier copy (.bak) is used`);
+				return backup;
+			}
+		} catch {
+			/* the backup cannot be opened either */
+		}
+		this.damaged = true;
+		log.error('app', `${this.label}: the file is damaged and there is no usable copy; it was left as it is and will not be changed`);
+		return undefined;
+	}
+
 	write(text: string, forcePlain = false): void {
 		if (this.locked) throw new UserError('Saved passwords are locked. Enter the master password first');
+		if (this.damaged) throw new UserError(`The ${this.label} file is damaged, so nothing was changed. Restore it from a backup, or delete the file to start fresh`);
 		const sealed = !forcePlain && !!this.vault?.isSetUp();
 		writeAtomic(this.file, sealed ? this.vault!.seal(this.label, text) : text);
 	}

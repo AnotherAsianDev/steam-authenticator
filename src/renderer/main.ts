@@ -38,6 +38,7 @@ interface Settings {
 	autoDetect: boolean;
 	checkUpdates: boolean;
 	sortBy: SortBy;
+	layout: 'list' | 'grid';
 	updateDismissed: string;
 	importFolders: string[];
 	todoIgnored: string[];
@@ -660,7 +661,22 @@ async function listScreen(): Promise<void> {
 			if (li) list.append(li);
 		}
 	}
-	const filterBar = el('div', { class: 'filterbar' }, search, el('div', { class: 'filter-line' }, chipRow, sortSelect));
+	const layoutBtns = (['list', 'grid'] as const).map((l) =>
+		el('button', {
+			class: 'seg', type: 'button', title: l === 'list' ? 'List' : 'Grid', ariaLabel: l === 'list' ? 'List layout' : 'Grid layout', textContent: l === 'list' ? '☰' : '▦',
+			onclick: async () => {
+				const r = await api.setSettings({ layout: l });
+				if (!r.ok) return toast(r.error, true);
+				applySettings(r.value);
+				drawLayout();
+			}
+		}));
+	function drawLayout(): void {
+		list.classList.toggle('grid', settings.layout === 'grid');
+		layoutBtns.forEach((b, i) => b.classList.toggle('on', (i === 0 ? 'list' : 'grid') === settings.layout));
+	}
+	drawLayout();
+	const filterBar = el('div', { class: 'filterbar' }, search, el('div', { class: 'filter-line' }, chipRow, el('span', { class: 'seg-group' }, ...layoutBtns), sortSelect));
 	const overview = el('section', { class: 'overview', hidden: true });
 	/** Account count and what is still missing, from the same list as the To do tab (ignored items are not counted). */
 	function drawOverview(total: number, todo: TodoItem[] | undefined): void {
@@ -1134,16 +1150,30 @@ async function exportScreen(): Promise<void> {
 		update();
 	});
 
+	let accQuery = '';
+	const accFilter = el('input', { type: 'search', class: 'acc-filter', placeholder: 'Filter accounts…', ariaLabel: 'Filter accounts', spellcheck: false });
+	accFilter.addEventListener('input', () => { accQuery = accFilter.value.trim().toLowerCase(); drawAccounts(); });
+	const matchesFilter = (a: { steamId: string; name: string; nickname: string | null }): boolean => !accQuery || `${a.name} ${a.nickname ?? ''} ${a.steamId}`.toLowerCase().includes(accQuery);
+	const accCount = el('span', { class: 'hint' });
+	function setCount(visible: number): void {
+		accCount.textContent = `${chosen.size} of ${accountsList.length} selected${accQuery ? ` · ${visible} shown` : ''}`;
+	}
 	function drawAccounts(): void {
+		const visible = accountsList.filter(matchesFilter);
+		setCount(visible.length);
 		accBox.replaceChildren(
-			el('div', { class: 'acc-actions' }, el('button', { class: 'link', type: 'button', textContent: 'All', onclick: () => { accountsList.forEach((a) => chosen.add(a.steamId)); drawAccounts(); update(); } }), el('button', { class: 'link', type: 'button', textContent: 'None', onclick: () => { chosen.clear(); drawAccounts(); update(); } })),
-			...accountsList.map((a) => {
+			el('div', { class: 'acc-actions' },
+				el('button', { class: 'link', type: 'button', textContent: accQuery ? 'All shown' : 'All', onclick: () => { visible.forEach((a) => chosen.add(a.steamId)); drawAccounts(); update(); } }),
+				el('button', { class: 'link', type: 'button', textContent: accQuery ? 'None shown' : 'None', onclick: () => { visible.forEach((a) => chosen.delete(a.steamId)); drawAccounts(); update(); } }),
+				accCount),
+			...(visible.length === 0 ? [el('p', { class: 'hint', textContent: 'No account matches.' })] : []),
+			...visible.map((a) => {
 				const cb = el('input', { type: 'checkbox', checked: chosen.has(a.steamId), onchange: () => { if (cb.checked) chosen.add(a.steamId); else chosen.delete(a.steamId); update(); } });
 				const chip = (cls: string, text: string, warn: boolean): HTMLElement => el('span', { class: `chip-s ${cls}${warn ? ' warn' : ''}`, textContent: text });
 				return el('label', { class: 'check acc' }, cb,
 					el('span', { class: 'acc-main' },
-						el('span', { class: 'acc-name', textContent: a.name }),
-						el('span', { class: 'acc-sub', textContent: [a.nickname, a.steamId].filter(Boolean).join(' · ') })),
+						el('span', { class: 'acc-name', textContent: accountLabel(a.name, a.nickname) }),
+						el('span', { class: 'acc-sub', textContent: accountSubline(a.name, a.nickname, a.steamId) || a.steamId })),
 					el('span', { class: 'acc-chips' },
 						chip('pw', a.hasPassword ? 'password saved' : 'no password', false),
 						chip('rev', a.hasRevocation ? 'revocation code' : 'no revocation code', false)));
@@ -1160,6 +1190,7 @@ async function exportScreen(): Promise<void> {
 		const row = (n: number): string => f.map((x) => (x === 'username' || x === 'nickname' ? `${FIELD_INFO[x]!.example}${n}` : x === 'steamId' ? String(BigInt(FIELD_INFO[x]!.example) + BigInt(n - 1)) : FIELD_INFO[x]!.example)).join(delimiter.replace(/\t/g, '\t'));
 		exampleBox.textContent = f.length ? [1, 2].map(row).join('\n') : '';
 		drawAccountsNotes();
+		setCount(accountsList.filter(matchesFilter).length);
 		window.clearTimeout(timerId);
 		timerId = window.setTimeout(async () => {
 			if (f.length === 0 || ids().length === 0) {
@@ -1211,7 +1242,7 @@ async function exportScreen(): Promise<void> {
 			el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: '1. What to include, in which order' }), el('p', { class: 'hint', textContent: 'Tick the fields and use the arrows to set the order.' }), fieldsBox),
 			el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: '2. Separator' }), el('p', { class: 'hint', textContent: 'Put between the values on each line.' }), sepBox),
 			el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: '3. Example' }), el('p', { class: 'hint', textContent: 'Made-up data, one line per account:' }), formatLine, exampleBox),
-			el('section', { class: 'group' }, el('div', { class: 'group-head' }, el('h2', { class: 'todo-title', textContent: '4. Accounts' }), exportSort), el('p', { class: 'hint', textContent: 'The lines are written in this order. It is the same order as on the Codes page.' }), accBox, el('label', { class: 'check' }, skipBox, 'Leave out accounts that are missing a chosen value')),
+			el('section', { class: 'group' }, el('div', { class: 'group-head' }, el('h2', { class: 'todo-title', textContent: '4. Accounts' }), exportSort), el('p', { class: 'hint', textContent: 'The lines are written in this order, the same as on the Codes page. Accounts you filter out of view stay selected.' }), accFilter, accBox, el('label', { class: 'check' }, skipBox, 'Leave out accounts that are missing a chosen value')),
 			el('section', { class: 'group' }, status, el('div', { class: 'row-actions left' }, copyBtn, saveBtn), el('p', { class: 'hint', textContent: 'The result is plain text with your real passwords and secrets. Keep it safe and delete it when done. Copied text is cleared from the clipboard after the time set in Settings.' }))
 		)
 	);
@@ -1834,7 +1865,7 @@ async function settingsScreen(): Promise<void> {
 async function boot(): Promise<void> {
 	const s = await api.settings();
 	if (s.ok) applySettings(s.value);
-	else applySettings({ theme: 'system', density: 'comfortable', showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false, checkUpdates: true, sortBy: 'added-asc', updateDismissed: '' });
+	else applySettings({ theme: 'system', density: 'comfortable', showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false, checkUpdates: true, sortBy: 'added-asc', layout: 'list', updateDismissed: '' });
 	api.onChanged(() => refreshView());
 	api.onLogChanged(() => {
 		void updateLogCount();

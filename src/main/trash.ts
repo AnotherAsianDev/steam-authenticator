@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeFileAtomic } from './atomic';
 import { UserError } from './errors';
 import { MaFileError, parseMaFile } from './mafile';
 import { parseEnvelope, type Vault } from './vault';
@@ -36,9 +37,7 @@ export class Trash {
 	}
 
 	private write(path: string, text: string): void {
-		const tmp = `${path}.tmp`;
-		writeFileSync(tmp, text, { mode: 0o600 });
-		renameSync(tmp, path);
+		writeFileAtomic(path, text, { mode: 0o600 });
 	}
 
 	/** Keep a copy. The details go first, so an entry that is listed always has its password. */

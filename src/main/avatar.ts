@@ -1,5 +1,6 @@
 import { log } from './log';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { writeFileAtomic } from './atomic';
+import { existsSync, readFileSync, statSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -41,6 +42,9 @@ export class AvatarCache {
 	private checkedAt = new Map<string, number>();
 	private onDisk = new Set<string>();
 	private names: Record<string, string> = {};
+	/** The picture address last downloaded per account; an unchanged address needs no new image request. */
+	private urls: Record<string, string> = {};
+	private wantImage = new Map<string, boolean>();
 
 	constructor(
 		private readonly dir: string,
@@ -53,6 +57,12 @@ export class AvatarCache {
 		} catch {
 			/* no names yet */
 		}
+		try {
+			const raw = JSON.parse(readFileSync(join(dir, 'urls.json'), 'utf8')) as Record<string, unknown>;
+			for (const [id, u] of Object.entries(raw)) if (typeof u === 'string') this.urls[id] = u;
+		} catch {
+			/* none yet */
+		}
 	}
 
 	/** Look again soon, for example after a setting that needs the profile was turned on. */
@@ -63,6 +73,14 @@ export class AvatarCache {
 	/** The profile name, once it has been fetched. */
 	nickname(steamId: string): string | undefined {
 		return this.names[steamId];
+	}
+
+	private metaTime(): number {
+		try {
+			return statSync(join(this.dir, 'names.json')).mtimeMs;
+		} catch {
+			return 0;
+		}
 	}
 
 	private file(steamId: string): string {
@@ -86,14 +104,18 @@ export class AvatarCache {
 	}
 
 	/** Queue a download if the cached copy is missing or old. Returns immediately. */
-	ensure(steamId: string): void {
+	ensure(steamId: string, wantImage = true): void {
 		if (this.pending.has(steamId)) return;
+		this.wantImage.set(steamId, wantImage);
 		const now = Date.now();
 		if (now - (this.checkedAt.get(steamId) ?? 0) < 300_000) return;
 		this.checkedAt.set(steamId, now);
 		const f = this.file(steamId);
 		try {
-			if (existsSync(f) && this.names[steamId] !== undefined && Date.now() - statSync(f).mtimeMs < MAX_AGE_MS) return;
+			// Picture not shown: only the name matters, so a missing picture is no reason to ask again.
+			const haveImage = !wantImage || existsSync(f);
+			const stamp = existsSync(f) ? statSync(f).mtimeMs : this.names[steamId] !== undefined ? this.metaTime() : 0;
+			if (haveImage && this.names[steamId] !== undefined && Date.now() - stamp < MAX_AGE_MS) return;
 		} catch {
 			/* treat as missing */
 		}
@@ -112,17 +134,30 @@ export class AvatarCache {
 			const name = extractPersonaName(xml);
 			if (name && name !== this.names[steamId]) {
 				this.names[steamId] = name;
-				mkdirSync(this.dir, { recursive: true });
-				writeFileSync(join(this.dir, 'names.json'), JSON.stringify(this.names));
+				writeFileAtomic(join(this.dir, 'names.json'), JSON.stringify(this.names));
 				this.onUpdate();
 			}
+			try {
+				const n = new Date();
+				utimesSync(join(this.dir, 'names.json'), n, n); // marks the name as freshly checked
+			} catch {
+				/* no names file yet */
+			}
+			if (!this.wantImage.get(steamId)) return;
 			const url = extractAvatarUrl(xml);
 			if (!url) throw new Error('no avatar');
+			if (this.urls[steamId] === url && existsSync(this.file(steamId))) {
+				// Same picture as before: just mark the copy as fresh instead of downloading it again.
+				const now = new Date();
+				utimesSync(this.file(steamId), now, now);
+				return;
+			}
 			const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
 			const buf = Buffer.from(await res.arrayBuffer());
 			if (!res.ok || buf.length === 0 || buf.length > MAX_BYTES) throw new Error('bad image');
-			mkdirSync(this.dir, { recursive: true });
-			writeFileSync(this.file(steamId), buf);
+			writeFileAtomic(this.file(steamId), buf);
+			this.urls[steamId] = url;
+			writeFileAtomic(join(this.dir, 'urls.json'), JSON.stringify(this.urls));
 			this.onDisk.add(steamId);
 			this.onUpdate();
 		} catch (err) {

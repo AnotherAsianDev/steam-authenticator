@@ -20,15 +20,8 @@ export class CredentialStore {
 	/** Read the file again, for example after unlocking. */
 	reload(): void {
 		this.data = {};
-		try {
-			const text = this.f.read();
-			if (text) {
-				const raw = JSON.parse(text) as Record<string, unknown>;
-				for (const [id, pw] of Object.entries(raw)) if (typeof pw === 'string') this.data[id] = pw;
-			}
-		} catch {
-			this.data = {};
-		}
+		const raw = this.f.readJson();
+		if (raw) for (const [id, pw] of Object.entries(raw)) if (typeof pw === 'string') this.data[id] = pw;
 	}
 	get locked(): boolean {
 		return this.f.locked;
@@ -37,7 +30,7 @@ export class CredentialStore {
 		return this.data[steamId];
 	}
 	has(steamId: string): boolean {
-		return this.f.locked || this.data[steamId] !== undefined;
+		return this.f.locked || this.f.damaged || this.data[steamId] !== undefined;
 	}
 	set(steamId: string, password: string): void {
 		this.save({ ...this.data, [steamId]: password });

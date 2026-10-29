@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, screen, shell } f
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { Accounts } from './accounts';
+import { describeWriteError } from './atomic';
 import { UserError } from './errors';
 import { AvatarCache } from './avatar';
 import { findMaFileFolders, importFolder, normalizeStoreFolder, readMaFile } from './autoimport';
@@ -44,6 +45,11 @@ const devicePin = new DevicePin(join(process.env['LOCALAPPDATA'] ?? app.getPath(
 const trash = new Trash(join(data, 'trash'), vault);
 log.init(join(data, 'log.jsonl'), () => secretValues(), () => win?.webContents.send('logChanged'));
 process.on('uncaughtException', (err) => log.error('app', 'Unexpected error', err));
+app.on('render-process-gone', (_e, _wc, details) => {
+	log.error('app', `The window process stopped (${details.reason}); reloading it`);
+	if (details.reason !== 'clean-exit' && win && !win.isDestroyed()) setTimeout(() => win?.reload(), 300);
+});
+app.on('child-process-gone', (_e, details) => log.warn('app', `A helper process stopped (${details.type}: ${details.reason})`));
 process.on('unhandledRejection', (err) => log.error('app', 'Unhandled error', err));
 const secretValues = (): string[] => {
 	const out: string[] = [];
@@ -151,7 +157,8 @@ function handle<T>(channel: string, fn: (...args: any[]) => T | Promise<T>): voi
 		try {
 			return { ok: true, value: await fn(...args) };
 		} catch (err) {
-			const message = err instanceof UserError ? err.message : 'Something went wrong';
+			if (!(err instanceof UserError)) log.error('app', `Unexpected error in ${channel}`, err);
+			const message = err instanceof UserError ? err.message : describeWriteError(err) ?? 'Something went wrong';
 			return { ok: false, error: message };
 		}
 	});
@@ -230,7 +237,7 @@ function registerIpc(): void {
 		const rows = ids.map((steamId) => {
 			const a = accounts.get(steamId)!;
 			const st = accounts.status(steamId);
-			if (wantProfiles) avatars.ensure(steamId);
+			if (wantProfiles) avatars.ensure(steamId, showAvatars);
 			return {
 				steamId,
 				addedAt: addedDates.get(steamId, () => store.fileTime(steamId)),
@@ -683,6 +690,15 @@ app.on('second-instance', () => {
 
 app.whenReady().then(async () => {
 	if (!firstInstance) return;
+	try {
+		await startApp();
+	} catch (err) {
+		log.error('app', 'The program could not start', err);
+		dialog.showErrorBox('Authenticator could not start', `${describeWriteError(err) ?? 'Something went wrong while starting.'}\n\nYour accounts and files were not changed.`);
+		app.exit(1);
+	}
+});
+async function startApp(): Promise<void> {
 	// No menu bar: the window has its own title bar, and Alt must not pop up a stray one.
 	Menu.setApplicationMenu(null);
 	registerIpc();
@@ -701,7 +717,7 @@ app.whenReady().then(async () => {
 	app.on('activate', () => {
 		if (BrowserWindow.getAllWindows().length === 0) createWindow();
 	});
-});
+}
 app.on('window-all-closed', () => {
 	watcher.close();
 	app.quit();

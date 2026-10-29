@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { writeFileAtomic } from './atomic';
 
 /**
  * When each account was added, for sorting. New accounts get the time they were first seen.
@@ -42,9 +43,7 @@ export class AddedDates {
 		}
 		if (!this.dirty) return;
 		try {
-			const tmp = `${this.file}.tmp`;
-			writeFileSync(tmp, JSON.stringify(Object.fromEntries(this.dates)));
-			renameSync(tmp, this.file);
+			writeFileAtomic(this.file, JSON.stringify(Object.fromEntries(this.dates)));
 			this.dirty = false;
 		} catch {
 			/* only used for sorting; try again next time */

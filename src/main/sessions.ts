@@ -55,12 +55,8 @@ export class TokenStore {
 	}
 	reload(): void {
 		this.tokens = {};
-		try {
-			const text = this.f.read();
-			if (text) this.tokens = JSON.parse(text);
-		} catch {
-			this.tokens = {};
-		}
+		const raw = this.f.readJson();
+		if (raw) for (const [id, t] of Object.entries(raw)) if (typeof t === 'string') this.tokens[id] = t;
 	}
 	get(steamId: string): string | undefined {
 		const t = this.tokens[steamId];

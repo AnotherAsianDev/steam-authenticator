@@ -307,6 +307,21 @@ h2 { margin: 24px 0 10px; }
 .row > .code { grid-column: 4; }
 .row > .more { grid-column: 5; }
 
+/* layouts */
+.acc-filter { width: 100%; margin-bottom: 8px; }
+.acc-actions .hint { margin: 0 0 0 auto; }
+.seg-group { margin-left: auto; display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; flex: none; }
+.seg { background: var(--surface); color: var(--muted); border: 0; padding: 6px 10px; font-size: 14px; cursor: pointer; }
+.seg.on { background: color-mix(in srgb, var(--accent) 20%, var(--surface)); color: var(--text); }
+.list.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.list.grid .row { grid-template-columns: auto 1fr auto; grid-template-rows: auto auto auto; gap: 8px 12px; padding: 16px 14px 20px; }
+.list.grid .row > .avatar-slot { grid-column: 1; grid-row: 1; }
+.list.grid .row > .who { grid-column: 2; grid-row: 1; min-width: 0; }
+.list.grid .row > .more { grid-column: 3; grid-row: 1; }
+.list.grid .row > .code { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; text-align: center; }
+.list.grid .row > .badge { grid-column: 1 / -1; grid-row: 3; justify-self: start; }
+.list.grid .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* log */
 .log-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 .log-entry { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13px; }

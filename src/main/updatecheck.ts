@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { writeFileAtomic } from './atomic';
 import { log } from './log';
 
 /**
@@ -61,9 +62,7 @@ export class UpdateChecker {
 
 	private save(state: { checkedAt: number; latest?: Update }): void {
 		try {
-			const tmp = `${this.file}.tmp`;
-			writeFileSync(tmp, JSON.stringify(state));
-			renameSync(tmp, this.file);
+			writeFileAtomic(this.file, JSON.stringify(state));
 		} catch {
 			/* only a cache */
 		}
