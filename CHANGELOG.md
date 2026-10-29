@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+- Importing maFiles that are not named after the SteamID64 (for example `login.maFile`) and do not carry the SteamID in their Session block now works. The app looks, in this order, at a lowercase `steamid` field, the login cookie, a token's subject and finally SDA's `manifest.json` next to the file (which lists every file with its SteamID). When it finds the ID it writes it into the stored copy, so the file reads back on its own. The same applies to files dropped into the storage folder and to "Import maFiles…".
+- If nothing tells which account a file belongs to, the message now says what to do: use Add account, Import with secrets.
+
 ## 0.6.1
 - Export uses the same account order as the Codes page: the accounts list on the Export page is sorted that way, and the lines are written in that order. The sort menu is there too, and changing it changes both pages.
 
