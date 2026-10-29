@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+- The Export filter box now looks like the filter boxes on the other pages.
+- Clicking an avatar opens the account's Steam profile, in the list, the grid and the account page.
+
 ## 0.7.0
 - Layouts: a switch next to the sort menu on the Codes page toggles between the list and a grid of cards (code in the middle of each card). The choice is remembered.
 - Export shows the same big name as the Codes page (the Steam nickname if "Show Steam nickname" is on, else the login name), with the login name and SteamID under it, and sorts by that name.

@@ -308,7 +308,9 @@ h2 { margin: 24px 0 10px; }
 .row > .more { grid-column: 5; }
 
 /* layouts */
-.acc-filter { width: 100%; margin-bottom: 8px; }
+.acc-filter { margin-bottom: 10px; }
+.avatar.clickable { cursor: pointer; }
+.avatar.clickable:hover { outline: 2px solid var(--accent); }
 .acc-actions .hint { margin: 0 0 0 auto; }
 .seg-group { margin-left: auto; display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; flex: none; }
 .seg { background: var(--surface); color: var(--muted); border: 0; padding: 6px 10px; font-size: 14px; cursor: pointer; }

@@ -372,6 +372,13 @@ function accountSubline(name: string, nickname: string | null | undefined, steam
 function avatarBox(name: string, id: string, hasAvatar: boolean, size: 'sm' | 'lg'): HTMLElement {
 	const box = el('span', { class: `avatar ${size}`, textContent: name.slice(0, 1).toUpperCase() });
 	if (hasAvatar && settings.showAvatars) void loadAvatar(id, box);
+	box.classList.add('clickable');
+	box.title = 'Open Steam profile';
+	box.addEventListener('click', async (e) => {
+		e.stopPropagation();
+		const r = await api.openProfile(id);
+		if (!r.ok) toast(r.error, true);
+	});
 	return box;
 }
 
@@ -1151,7 +1158,7 @@ async function exportScreen(): Promise<void> {
 	});
 
 	let accQuery = '';
-	const accFilter = el('input', { type: 'search', class: 'acc-filter', placeholder: 'Filter accounts…', ariaLabel: 'Filter accounts', spellcheck: false });
+	const accFilter = el('input', { type: 'text', class: 'search acc-filter', placeholder: 'Filter accounts…', ariaLabel: 'Filter accounts', spellcheck: false });
 	accFilter.addEventListener('input', () => { accQuery = accFilter.value.trim().toLowerCase(); drawAccounts(); });
 	const matchesFilter = (a: { steamId: string; name: string; nickname: string | null }): boolean => !accQuery || `${a.name} ${a.nickname ?? ''} ${a.steamId}`.toLowerCase().includes(accQuery);
 	const accCount = el('span', { class: 'hint' });
