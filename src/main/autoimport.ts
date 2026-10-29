@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-import { MaFileError, parseMaFile } from './mafile';
+import { basename, dirname, join } from 'node:path';
+import { MaFileError, parseMaFile, steamIdFromManifest, type ParsedMaFile } from './mafile';
 import type { MaFileStore } from './store';
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'appdata', 'windows', '$recycle.bin']);
@@ -31,6 +31,25 @@ export function findMaFileFolders(roots: string[], maxDepth = 3, maxDirs = 4000)
 	return found;
 }
 
+/** Reads one maFile. When the file itself does not say which account it is, the manifest.json next to it (SDA's list of its files) can. */
+export function readMaFile(path: string): ParsedMaFile {
+	if (statSync(path).size > 1_000_000) throw new MaFileError('File is too large');
+	const text = readFileSync(path, 'utf8');
+	try {
+		return parseMaFile(text);
+	} catch (err) {
+		if (!(err instanceof MaFileError) || !/No SteamID/.test(err.message)) throw err;
+		let hint: string | undefined;
+		try {
+			hint = steamIdFromManifest(readFileSync(join(dirname(path), 'manifest.json'), 'utf8'), basename(path));
+		} catch {
+			/* no manifest */
+		}
+		if (!hint) throw err;
+		return parseMaFile(text, hint);
+	}
+}
+
 export interface FolderImport {
 	added: string[];
 	skipped: number;
@@ -52,9 +71,7 @@ export function importFolder(dir: string, store: MaFileStore, skip: ReadonlySet<
 	}
 	for (const file of files) {
 		try {
-			const path = join(dir, file);
-			if (statSync(path).size > 1_000_000) throw new MaFileError('File is too large');
-			const m = parseMaFile(readFileSync(path, 'utf8'));
+			const m = readMaFile(join(dir, file));
 			// Accounts the user removed stay removed, even though the original file is still there.
 			if (store.has(m.steamId) || skip.has(m.steamId)) {
 				result.skipped++;
@@ -98,8 +115,7 @@ export function normalizeStoreFolder(store: MaFileStore): StoreScan {
 		if (!/\.(mafile|json)$/i.test(file) || file.toLowerCase() === 'manifest.json') continue;
 		const path = join(store.dir, file);
 		try {
-			if (statSync(path).size > 1_000_000) throw new MaFileError('File is too large');
-			const m = parseMaFile(readFileSync(path, 'utf8'));
+			const m = readMaFile(path);
 			if (store.has(m.steamId)) {
 				result.duplicates.push(file);
 				continue;

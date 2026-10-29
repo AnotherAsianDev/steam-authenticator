@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import { Accounts } from './accounts';
 import { UserError } from './errors';
 import { AvatarCache } from './avatar';
-import { findMaFileFolders, importFolder, normalizeStoreFolder } from './autoimport';
+import { findMaFileFolders, importFolder, normalizeStoreFolder, readMaFile } from './autoimport';
 import { CredentialStore } from './credentials';
 import { FolderWatcher } from './watcher';
 import { steamNow, syncClock } from './clock';
@@ -313,7 +313,7 @@ function registerIpc(): void {
 			const file = basename(path);
 			if (file.toLowerCase() === 'manifest.json') continue;
 			try {
-				const m = parseMaFile(readFileSync(path, 'utf8'));
+				const m = readMaFile(path);
 				const replaced = store.has(m.steamId);
 				store.save(m.steamId, m.raw);
 				results.push({ file, ok: true, message: replaced ? `Updated ${m.accountName}` : `Added ${m.accountName}` });
