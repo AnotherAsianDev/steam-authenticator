@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.5.1
+- The update check now runs every time the app starts (it used to wait up to a day). If GitHub cannot be reached, the last known answer is used.
+
 ## 0.5.0
 - Update notice: once a day the app asks GitHub whether a newer release exists and, if so, shows a small notice with a button that opens the release page. It never downloads or installs anything; you update by dragging the new folder over the old one, as before. "Later" hides the notice for that version. Turn it off, or check right now, under Settings, Check for updates. The only request is to api.github.com, and the result is cached in `data/update.json`.
 
