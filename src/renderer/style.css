@@ -337,7 +337,6 @@ h2 { margin: 24px 0 10px; }
 .list.grid .row { grid-template-rows: auto auto auto; gap: 8px 12px; padding: 16px 14px 20px; }
 .list.grid .row > .avatar-slot { grid-column: 1; grid-row: 1; }
 .list.grid .row > .who { grid-column: 2; grid-row: 1; min-width: 0; }
-.list.grid .row > .more { grid-column: 3; grid-row: 1; }
 .list.grid .row > .code { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; text-align: center; }
 .list.grid .row > .badge { grid-column: 1 / -1; grid-row: 3; justify-self: start; }
 .list.grid .row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
