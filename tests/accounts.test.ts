@@ -325,4 +325,16 @@ describe('restarts do not repeat requests', () => {
 		expect(calls).toEqual(['GET', 'GET']);
 		expect(mint).toHaveBeenCalledTimes(1);
 	});
+
+	it('counts the days left on a saved sign-in, but only without a saved password', () => {
+		const { accounts, tokens, credentials, advance } = setup();
+		const jwt = (exp: number) => `x.${Buffer.from(JSON.stringify({ aud: ['mobile'], exp })).toString('base64url')}.y`;
+		expect(accounts.sessionDaysLeft(ID)).toBeUndefined();
+		tokens.set(ID, jwt(1_700_000_000 + 5 * 86400 + 100));
+		expect(accounts.sessionDaysLeft(ID)).toBe(5);
+		advance(2 * 86400);
+		expect(accounts.sessionDaysLeft(ID)).toBe(3);
+		credentials.set(ID, 'pw');
+		expect(accounts.sessionDaysLeft(ID)).toBeUndefined();
+	});
 });

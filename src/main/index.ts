@@ -5,7 +5,7 @@ import { Accounts } from './accounts';
 import { describeWriteError } from './atomic';
 import { AccountMeta } from './meta';
 import { UserError } from './errors';
-import { AvatarCache, type Bans } from './avatar';
+import { AvatarCache, banLabels, type Bans } from './avatar';
 import { fetchBans, KEY_FORMAT, testKey } from './bansapi';
 import { findMaFileFolders, importFolder, normalizeStoreFolder, readMaFile } from './autoimport';
 import { CredentialStore } from './credentials';
@@ -173,6 +173,8 @@ function handle<T>(channel: string, fn: (...args: any[]) => T | Promise<T>): voi
 	});
 }
 
+/** An account without a saved password is warned about when its sign-in has this many days left. */
+const SESSION_WARN_DAYS = 14;
 const API_KEY_ID = '_apiKey';
 const apiKeyState = (): { has: boolean; locked: boolean; hint: string } => {
 	const k = credentials.get(API_KEY_ID);
@@ -208,12 +210,6 @@ function refreshApiBans(ids: string[]): void {
 /** One line about how long ago the last ban was (only known through the API). */
 function banNote(b: Bans | undefined): string {
 	return b?.daysSince !== undefined ? `Last ban ${b.daysSince === 0 ? 'today' : `${b.daysSince} day${b.daysSince === 1 ? '' : 's'} ago`}.` : '';
-}
-
-/** Short texts for what is wrong with an account on Steam's side (empty when nothing is). */
-function bannedLabels(b: Bans | undefined): string[] {
-	if (!b) return [];
-	return [b.vac ? ((b.vacCount ?? 0) > 1 ? `VAC ban ×${b.vacCount}` : 'VAC ban') : '', (b.gameBans ?? 0) > 0 ? ((b.gameBans ?? 0) > 1 ? `Game ban ×${b.gameBans}` : 'Game ban') : '', b.community ? 'Community ban' : '', b.trade === 'Banned' ? 'Trade ban' : b.trade === 'Probation' ? 'Trade probation' : ''].filter(Boolean);
 }
 
 const publicStatus = (id: string) => {
@@ -302,7 +298,9 @@ function registerIpc(): void {
 				remaining: secondsRemaining(t),
 				hasAvatar: showAvatars && avatars.has(steamId),
 				nickname: avatars.nickname(steamId) ?? null,
-				bans: watchBans ? bannedLabels(avatars.bans(steamId)) : [],
+				bans: watchBans ? banLabels(avatars.bans(steamId)) : [],
+				tags: meta.get(steamId).tags,
+				sessionDays: accounts.sessionDaysLeft(steamId) ?? null,
 				state: st.state,
 				pending: st.state === 'ok' ? st.items.length : null
 			};
@@ -334,7 +332,7 @@ function registerIpc(): void {
 	});
 	handle('detail', (steamId: unknown) => {
 		const a = accounts.get(known(steamId))!;
-		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note, bans: bannedLabels(avatars.bans(a.steamId)), banNote: banNote(avatars.bans(a.steamId)) };
+		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note, tags: meta.get(a.steamId).tags, bans: banLabels(avatars.bans(a.steamId)), banNote: banNote(avatars.bans(a.steamId)), banHistory: avatars.history(a.steamId), sessionDays: accounts.sessionDaysLeft(a.steamId) ?? null };
 	});
 	handle('apiKeyState', () => apiKeyState());
 	handle('apiKeySet', async (key: unknown) => {
@@ -363,7 +361,7 @@ function registerIpc(): void {
 	handle('setMeta', (steamId: unknown, patch: unknown) => {
 		const id = known(steamId);
 		if (typeof patch !== 'object' || patch === null) throw new UserError('Invalid change');
-		return meta.set(id, patch as { pinned?: unknown; note?: unknown });
+		return meta.set(id, patch as { pinned?: unknown; note?: unknown; tags?: unknown });
 	});
 	handle('healthCheck', async () => {
 		await syncClock();
@@ -388,7 +386,9 @@ function registerIpc(): void {
 			if (st.state === 'signin') warn.push('Needs a sign-in to show confirmations');
 			else if (st.state === 'error') warn.push(st.message ?? 'Confirmations could not be checked');
 			if (!accounts.hasPassword(steamId)) warn.push('No saved password');
-			const bl = bannedLabels(avatars.bans(steamId));
+			const left = accounts.sessionDaysLeft(steamId);
+			if (left !== undefined && left <= SESSION_WARN_DAYS) warn.push(`The saved sign-in runs out in ${left} day${left === 1 ? '' : 's'}`);
+			const bl = banLabels(avatars.bans(steamId));
 			if (bl.length) bad.push(`Steam shows: ${bl.join(', ')}`);
 			if (avatars.bans(steamId)?.limited) warn.push('Steam marks this account as limited');
 			if (!a.revocationCode) warn.push('No revocation code (you cannot remove the authenticator without it)');
@@ -478,6 +478,10 @@ function registerIpc(): void {
 			if (!accounts.hasPassword(steamId) && !ignored.has(`${steamId}:password`)) {
 				items.push({ kind: 'password', steamId, name: a.accountName, detail: 'No password saved' });
 			}
+			const left = accounts.sessionDaysLeft(steamId);
+			if (left !== undefined && left <= SESSION_WARN_DAYS && !ignored.has(`${steamId}:expiring`)) {
+				items.push({ kind: 'expiring', steamId, name: a.accountName, detail: left === 0 ? 'The saved sign-in runs out today. Save the password to keep it going' : `The saved sign-in runs out in ${left} day${left === 1 ? '' : 's'}. Save the password to keep it going` });
+			}
 			if (!a.revocationCode && !ignored.has(`${steamId}:revocation`)) {
 				items.push({ kind: 'revocation', steamId, name: a.accountName, detail: 'No revocation code. Without it Steam Guard cannot be removed from here' });
 			}
@@ -527,7 +531,7 @@ function registerIpc(): void {
 		accounts.ids().map((steamId) => {
 			const a = accounts.get(steamId)!;
 			const st = accounts.status(steamId);
-			return { steamId, name: a.accountName, nickname: avatars.nickname(steamId) ?? null, addedAt: addedDates.get(steamId, () => store.fileTime(steamId)), pinned: meta.get(steamId).pinned, note: meta.get(steamId).note, pending: st.state === 'ok' ? st.items.length : null, hasPassword: accounts.hasPassword(steamId), hasRevocation: !!a.revocationCode };
+			return { steamId, name: a.accountName, nickname: avatars.nickname(steamId) ?? null, addedAt: addedDates.get(steamId, () => store.fileTime(steamId)), pinned: meta.get(steamId).pinned, note: meta.get(steamId).note, tags: meta.get(steamId).tags, pending: st.state === 'ok' ? st.items.length : null, hasPassword: accounts.hasPassword(steamId), hasRevocation: !!a.revocationCode };
 		})
 	);
 	handle('exportCheck', (ids: unknown, fields: unknown, delimiter: unknown, skip: unknown) => {

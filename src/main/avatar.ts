@@ -62,6 +62,18 @@ export function extractBans(xml: string): Bans | undefined {
 	return { vac: vac === '1', trade, limited };
 }
 
+/** Short texts for what is wrong with an account on Steam's side (empty when nothing is). */
+export function banLabels(b: Bans | undefined): string[] {
+	if (!b) return [];
+	const n = (count: number | undefined, label: string): string => ((count ?? 0) > 1 ? `${label} ×${count}` : label);
+	return [
+		b.vac ? n(b.vacCount, 'VAC ban') : '',
+		(b.gameBans ?? 0) > 0 ? n(b.gameBans, 'Game ban') : '',
+		b.community ? 'Community ban' : '',
+		b.trade === 'Banned' ? 'Trade ban' : b.trade === 'Probation' ? 'Trade probation' : ''
+	].filter(Boolean);
+}
+
 /** True when something on the account deserves attention. */
 export const isBanned = (b: Bans | undefined): boolean => !!b && (b.vac || !!b.community || (b.gameBans ?? 0) > 0 || (b.trade !== 'None' && b.trade !== ''));
 
@@ -72,7 +84,10 @@ interface Profile {
 	/** When the profile page was last read. */
 	checked: number;
 	bans?: Bans;
+	/** What changed about the bans and when, newest last. */
+	events?: { at: number; what: string }[];
 }
+const EVENTS_MAX = 20;
 
 export class AvatarCache {
 	private failed = new Map<string, number>();
@@ -105,6 +120,7 @@ export class AvatarCache {
 					...(typeof p.name === 'string' ? { name: p.name } : {}),
 					...(typeof p.url === 'string' ? { url: p.url } : {}),
 					checked: typeof p.checked === 'number' ? p.checked : 0,
+					...(Array.isArray(p.events) ? { events: p.events.filter((e) => typeof e?.at === 'number' && typeof e?.what === 'string').slice(-EVENTS_MAX) } : {}),
 					...(b && typeof b.vac === 'boolean' && typeof b.trade === 'string' ? { bans: { vac: b.vac, trade: b.trade, limited: b.limited === true, ...(typeof b.vacCount === 'number' ? { vacCount: b.vacCount } : {}), ...(typeof b.gameBans === 'number' ? { gameBans: b.gameBans } : {}), ...(typeof b.community === 'boolean' ? { community: b.community } : {}), ...(typeof b.daysSince === 'number' ? { daysSince: b.daysSince } : {}), ...(b.api ? { api: true as const } : {}) } } : {})
 				};
 			}
@@ -165,12 +181,28 @@ export class AvatarCache {
 		if (JSON.stringify(before?.bans) !== JSON.stringify(bans)) this.onUpdate();
 	}
 
+	private record(steamId: string, what: string): void {
+		const p = this.profiles[steamId];
+		if (p) p.events = [...(p.events ?? []), { at: Date.now(), what }].slice(-EVENTS_MAX);
+	}
+
 	private noteNewBan(steamId: string, before: Bans | undefined, now: Bans): void {
-		if (!before) return;
+		if (!before) {
+			if (isBanned(now)) this.record(steamId, `Found with ${banLabels(now).join(', ')} when first checked`);
+			return;
+		}
+		if (isBanned(before) && !isBanned(now)) this.record(steamId, 'Bans lifted');
+		const gained = banLabels(now).filter((l) => !banLabels(before).includes(l));
+		if (gained.length) this.record(steamId, `New: ${gained.join(', ')}`);
 		if (now.vac && !before.vac) this.onNewBan(steamId, 'a VAC ban');
 		else if ((now.gameBans ?? 0) > (before.gameBans ?? 0)) this.onNewBan(steamId, 'a game ban');
 		else if (now.community && !before.community) this.onNewBan(steamId, 'a community ban');
 		else if (now.trade !== before.trade && now.trade !== 'None') this.onNewBan(steamId, `a trade ban (${now.trade})`);
+	}
+
+	/** Changes to the bans seen so far, oldest first. */
+	history(steamId: string): { at: number; what: string }[] {
+		return this.profiles[steamId]?.events ?? [];
 	}
 
 	/** Ban state as of the last time the profile was read. */

@@ -172,6 +172,19 @@ export class Accounts {
 		return st.state === 'ok' && this.d.steamNow() - st.fetchedAt < minAgeSeconds;
 	}
 
+	/**
+	 * Whole days until the saved sign-in runs out, but only for an account that cannot sign in again by itself
+	 * (no saved password). Undefined when that does not apply or no sign-in is known.
+	 */
+	sessionDaysLeft(steamId: string): number | undefined {
+		if (this.d.credentials.has(steamId)) return undefined;
+		const now = this.d.steamNow();
+		const exps = [this.d.tokens.get(steamId), this.parsed.get(steamId)?.refreshToken]
+			.filter((t): t is string => !!t && isUsableMobileToken(t, now))
+			.map((t) => tokenExpiry(t) ?? 0);
+		return exps.length ? Math.max(0, Math.floor((Math.max(...exps) - now) / 86400)) : undefined;
+	}
+
 	/** True when there is neither a usable token nor a saved password, so no request can help. */
 	private cannotSignIn(steamId: string): boolean {
 		if (this.d.credentials.has(steamId)) return false;

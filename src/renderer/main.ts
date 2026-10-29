@@ -9,7 +9,10 @@ interface Row {
 	hasAvatar: boolean;
 	pinned: boolean;
 	note: string;
+	tags: string[];
 	bans: string[];
+	/** Days until the saved sign-in runs out, when that is soon and no password is saved to renew it. */
+	sessionDays: number | null;
 	state: 'idle' | 'loading' | 'ok' | 'signin' | 'error';
 	pending: number | null;
 }
@@ -85,7 +88,7 @@ function sortAccounts<T extends Sortable>(rows: T[]): T[] {
 const SORTS: [SortBy, string][] = [['added-asc', 'Added: oldest first'], ['added-desc', 'Added: newest first'], ['name-asc', 'Name: A to Z'], ['name-desc', 'Name: Z to A'], ['pending', 'Most pending first']];
 
 interface TodoItem {
-	kind: 'signin' | 'password' | 'revocation' | 'activation';
+	kind: 'signin' | 'expiring' | 'password' | 'revocation' | 'activation';
 	steamId: string;
 	name: string;
 	detail: string;
@@ -118,8 +121,8 @@ declare const api: {
 	avatar(id: string): P<string | null>;
 	copyCode(id: string): P<void>;
 	copyField(id: string, field: string): P<void>;
-	detail(id: string): P<{ steamId: string; name: string; nickname: string | null; hasRevocation: boolean; hasPassword: boolean; pinned: boolean; note: string; bans: string[]; banNote: string }>;
-	setMeta(id: string, patch: { pinned?: boolean; note?: string }): P<{ pinned: boolean; note: string }>;
+	detail(id: string): P<{ steamId: string; name: string; nickname: string | null; hasRevocation: boolean; hasPassword: boolean; pinned: boolean; note: string; tags: string[]; bans: string[]; banNote: string; banHistory: { at: number; what: string }[]; sessionDays: number | null }>;
+	setMeta(id: string, patch: { pinned?: boolean; note?: string; tags?: string[] | string }): P<{ pinned: boolean; note: string; tags: string[] }>;
 	apiKeyState(): P<{ has: boolean; locked: boolean; hint: string }>;
 	apiKeySet(key: string): P<{ has: boolean; locked: boolean; hint: string }>;
 	apiKeyTest(): P<'ok' | 'invalid' | 'network'>;
@@ -153,7 +156,7 @@ declare const api: {
 	todo(): P<TodoItem[]>;
 	todoIgnore(id: string, kind: string): P<Settings>;
 	setRevocation(id: string, code: string): P<void>;
-	exportInfo(): P<{ steamId: string; name: string; nickname: string | null; addedAt: number; pending: number | null; pinned: boolean; note: string; hasPassword: boolean; hasRevocation: boolean }[]>;
+	exportInfo(): P<{ steamId: string; name: string; nickname: string | null; addedAt: number; pending: number | null; pinned: boolean; note: string; tags: string[]; hasPassword: boolean; hasRevocation: boolean }[]>;
 	exportCheck(ids: string[], fields: string[], d: string, skip: boolean): P<{ count: number; skipped: number; conflicts: number }>;
 	exportCopy(ids: string[], fields: string[], d: string, skip: boolean): P<number>;
 	exportSave(ids: string[], fields: string[], d: string, skip: boolean): P<{ count: number; path: string } | null>;
@@ -229,6 +232,8 @@ const ICONS: Record<string, string> = {
 	'theme-system': '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
 	'theme-light': '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
 	'theme-dark': '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
+	ban: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>',
+	clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
 	collapse: '<path d="m13 7 5 5-5 5M6 7l5 5-5 5"/>',
 	lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 	trash: '<path d="M4 7h16M10 11v6M14 11v6"/><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M9 7V4h6v3"/>',
@@ -440,6 +445,7 @@ function profileLink(id: string, name: string, cls: string): HTMLButtonElement {
 
 let query = '';
 let listFilter: 'all' | 'pending' | 'signin' = 'all';
+let tagFilter = '';
 let confirmType = 'all';
 let pendingTotal = 0;
 const setTabCount = (): void => {
@@ -497,7 +503,7 @@ async function navigate(v: typeof view): Promise<void> {
 }
 
 /** A button that must be pressed twice within a few seconds. */
-type MenuItem = 'sep' | { label: string; run: () => void | Promise<void>; danger?: boolean; confirm?: string };
+type MenuItem = { head: string } | 'sep' | { label: string; run: () => void | Promise<void>; danger?: boolean; confirm?: string };
 let closeMenu: () => void = () => undefined;
 /** A small right-click menu at the pointer. Closes on a click elsewhere, Escape, scrolling or when the window loses focus. */
 function showMenu(x: number, y: number, items: MenuItem[]): void {
@@ -506,6 +512,10 @@ function showMenu(x: number, y: number, items: MenuItem[]): void {
 	for (const it of items) {
 		if (it === 'sep') {
 			menu.append(el('div', { class: 'ctx-sep', role: 'separator' }));
+			continue;
+		}
+		if ('head' in it) {
+			menu.append(el('div', { class: 'ctx-head', textContent: it.head }));
 			continue;
 		}
 		const b = el('button', { class: `ctx-item${it.danger ? ' danger' : ''}`, type: 'button', role: 'menuitem', textContent: it.label });
@@ -526,7 +536,14 @@ function showMenu(x: number, y: number, items: MenuItem[]): void {
 	menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
 	menu.style.top = `${Math.max(4, Math.min(y, window.innerHeight - r.height - 4))}px`;
 	const away = (e: Event): void => { if (!menu.contains(e.target as Node)) closeMenu(); };
-	const key = (e: KeyboardEvent): void => { if (e.key === 'Escape') closeMenu(); };
+	const key = (e: KeyboardEvent): void => {
+		if (e.key === 'Escape') return closeMenu();
+		if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+		e.preventDefault();
+		const buttons = Array.from(menu.querySelectorAll<HTMLElement>('.ctx-item'));
+		const at = buttons.indexOf(document.activeElement as HTMLElement);
+		buttons[(at + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+	};
 	closeMenu = () => {
 		menu.remove();
 		document.removeEventListener('mousedown', away, true);
@@ -692,6 +709,31 @@ function dialog(title: string, text: string, fields: DialogField[], submit: stri
 
 // ------------------------------------------------------------------- list --
 
+const svgIcon = (name: string, size = 12): string => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+
+/** The small marks after an account's name: bans, waiting confirmations, sign-in problems, tags. Rebuilt only when something changed, so tooltips do not flicker. */
+function drawFlags(li: HTMLElement, row: Row): void {
+	const box = li.querySelector<HTMLElement>('.flags')!;
+	const key = JSON.stringify([row.state, row.pending, row.bans, row.sessionDays, row.tags]);
+	if (box.dataset['key'] === key) return;
+	box.dataset['key'] = key;
+	const flag = (cls: string, content: string, title: string, go: () => void): HTMLElement => {
+		const b = el('button', { class: `flag ${cls}`, type: 'button', title, ariaLabel: title, onclick: go });
+		b.innerHTML = content;
+		return b;
+	};
+	const detail = (): void => void navigate({ name: 'detail', id: row.steamId });
+	const nodes: HTMLElement[] = [];
+	if (row.bans.length) nodes.push(flag('ban', svgIcon('ban'), `Steam shows: ${row.bans.join(', ')}`, detail));
+	if (row.state === 'signin') nodes.push(flag('warn', svgIcon('lock'), 'Sign in needed to see confirmations', detail));
+	else if (row.state === 'error') nodes.push(flag('warn', '↻', 'Could not check confirmations. Click for details', detail));
+	else if (row.pending) nodes.push(flag('hot', String(row.pending), `${row.pending} confirmation${row.pending === 1 ? '' : 's'} waiting. Click to review`, () => void navigate({ name: 'confirms' })));
+	if (row.sessionDays !== null) nodes.push(flag('warn', svgIcon('clock'), `The saved sign-in runs out in ${row.sessionDays} day${row.sessionDays === 1 ? '' : 's'}. Save the password to keep it going`, detail));
+	row.tags.slice(0, 2).forEach((t) => nodes.push(el('span', { class: 'tag', textContent: t })));
+	if (row.tags.length > 2) nodes.push(el('span', { class: 'tag', textContent: `+${row.tags.length - 2}`, title: row.tags.slice(2).join(', ') }));
+	box.replaceChildren(...nodes);
+}
+
 async function listScreen(): Promise<void> {
 	const list = el('ul', { class: 'list' });
 	const empty = el(
@@ -728,7 +770,8 @@ async function listScreen(): Promise<void> {
 			const matchText = !q || (li.dataset['name'] ?? '').includes(q) || li.dataset['id']!.includes(q);
 			const st = li.dataset['state'];
 			const matchChip = listFilter === 'all' || (listFilter === 'pending' && Number(li.dataset['pending'] ?? 0) > 0) || (listFilter === 'signin' && st === 'signin');
-			li.hidden = !(matchText && matchChip);
+			const matchTag = !tagFilter || (li.dataset['tags'] ?? '').split('\n').includes(tagFilter);
+			li.hidden = !(matchText && matchChip && matchTag);
 			if (!li.hidden) shown++;
 		});
 		none.hidden = shown > 0 || list.children.length === 0;
@@ -780,19 +823,22 @@ async function listScreen(): Promise<void> {
 			if (!r.ok) toast(r.error, true);
 		};
 		showMenu(e.clientX, e.clientY, [
-			{ label: 'Copy code', run: async () => { const r = await api.copyCode(id); toast(r.ok ? 'Code copied' : r.error, !r.ok); } },
-			{ label: 'Copy username', run: copy('username', 'Username copied') },
-			{ label: 'Copy SteamID64', run: copy('steamId', 'SteamID64 copied') },
-			{ label: 'Copy saved password', run: copy('password', 'Password copied') },
+			{ head: 'Copy' },
+			{ label: 'Code', run: async () => { const r = await api.copyCode(id); toast(r.ok ? 'Code copied' : r.error, !r.ok); } },
+			{ label: 'Username', run: copy('username', 'Username copied') },
+			{ label: 'SteamID64', run: copy('steamId', 'SteamID64 copied') },
+			{ label: 'Saved password', run: copy('password', 'Password copied') },
 			'sep',
+			{ head: 'Account' },
 			{ label: row.pinned ? 'Unpin' : 'Pin to the top', run: async () => { const r = await api.setMeta(id, { pinned: !row.pinned }); if (!r.ok) return toast(r.error, true); await refresh(); } },
-			{ label: 'Details and note…', run: () => void navigate({ name: 'detail', id }) },
-			{ label: row.pending ? `Confirmations (${row.pending})` : 'Confirmations', run: () => void navigate({ name: 'confirms' }) },
+			{ label: 'Details, note and tags…', run: () => void navigate({ name: 'detail', id }) },
+			{ label: row.pending ? `Confirmations (${row.pending})…` : 'Confirmations…', run: () => void navigate({ name: 'confirms' }) },
 			{ label: 'Check confirmations now', run: async () => { const r = await api.refresh(id); toast(r.ok ? 'Checked' : r.error, !r.ok); await refresh(); } },
 			'sep',
-			{ label: 'Open Steam profile', run: async () => { const r = await api.openProfile(id); if (!r.ok) toast(r.error, true); } },
-			{ label: 'Open inventory (signed in)', run: web('inventory') },
-			{ label: 'Open trade offers (signed in)', run: web('tradeoffers') },
+			{ head: 'Open on Steam' },
+			{ label: 'Profile', run: async () => { const r = await api.openProfile(id); if (!r.ok) toast(r.error, true); } },
+			{ label: 'Inventory (signed in)', run: web('inventory') },
+			{ label: 'Trade offers (signed in)', run: web('tradeoffers') },
 			'sep',
 			{ label: 'Move to trash', confirm: 'Click again to move to trash', danger: true, run: async () => { const r = await api.remove(id); if (!r.ok) return toast(r.error, true); toast('Moved to the trash. You can restore it from Trash'); await refresh(); } }
 		]);
@@ -803,7 +849,21 @@ async function listScreen(): Promise<void> {
 		layoutBtns.forEach((b, i) => b.classList.toggle('on', (['list', 'columns', 'grid'] as const)[i] === settings.layout));
 	}
 	drawLayout();
-	const filterBar = el('div', { class: 'filterbar' }, search, el('div', { class: 'filter-line' }, chipRow, el('span', { class: 'seg-group' }, ...layoutBtns), sortSelect));
+	const tagSelect = el('select', { class: 'sort', ariaLabel: 'Filter by tag', title: 'Filter by tag', hidden: true });
+	tagSelect.addEventListener('change', () => { tagFilter = tagSelect.value; applyFilter(); });
+	/** The tag menu lists the tags that exist; it is only there when some account has one. */
+	function drawTagSelect(rows: Row[]): void {
+		const tags = [...new Set(rows.flatMap((r) => r.tags))].sort((a, b) => a.localeCompare(b));
+		if (tagFilter && !tags.includes(tagFilter)) tagFilter = '';
+		const key = tags.join('\n');
+		if (tagSelect.dataset['key'] !== key) {
+			tagSelect.dataset['key'] = key;
+			tagSelect.replaceChildren(el('option', { value: '', textContent: 'All tags' }), ...tags.map((t) => el('option', { value: t, textContent: t })));
+		}
+		tagSelect.value = tagFilter;
+		tagSelect.hidden = tags.length === 0;
+	}
+	const filterBar = el('div', { class: 'filterbar' }, search, el('div', { class: 'filter-line' }, chipRow, el('span', { class: 'seg-group' }, ...layoutBtns), tagSelect, sortSelect));
 	const overview = el('section', { class: 'overview', hidden: true });
 	/** Account count and what is still missing, from the same list as the To do tab (ignored items are not counted). */
 	function drawOverview(total: number, todo: TodoItem[] | undefined): void {
@@ -811,7 +871,7 @@ async function listScreen(): Promise<void> {
 		if (!todo) return;
 		const banned = lastRows.filter((r) => r.bans.length).length;
 		const count = (k: TodoItem['kind']): number => todo.filter((t) => t.kind === k).length;
-		const defs: [TodoItem['kind'], string][] = [['signin', 'need sign-in'], ['password', 'without password'], ['revocation', 'without revocation code'], ['activation', 'not activated']];
+		const defs: [TodoItem['kind'], string][] = [['signin', 'need sign-in'], ['expiring', 'sign-in running out'], ['password', 'without password'], ['revocation', 'without revocation code'], ['activation', 'not activated']];
 		const chips = defs.filter(([k]) => count(k) > 0).map(([k, text]) => el('button', { class: 'ov-chip warn', type: 'button', title: 'Open the To do list', textContent: `${count(k)} ${text}`, onclick: () => void navigate({ name: 'todo' }) }));
 		overview.replaceChildren(
 			el('div', { class: 'ov-total' }, el('strong', { textContent: String(total) }), el('span', { textContent: total === 1 ? 'account' : 'accounts' })),
@@ -849,6 +909,7 @@ async function listScreen(): Promise<void> {
 		existing.forEach((li) => li.remove());
 		lastRows = r.value;
 		applyOrder(r.value);
+		drawTagSelect(r.value);
 		pendingTotal = r.value.reduce((n, x) => n + (x.pending ?? 0), 0);
 		setTabCount();
 		filterBar.hidden = r.value.length === 0;
@@ -866,7 +927,6 @@ async function listScreen(): Promise<void> {
 			const c = await api.copyCode(row.steamId);
 			toast(c.ok ? 'Code copied' : c.error, !c.ok);
 		};
-		const badge = el('button', { class: 'badge', type: 'button', hidden: true, onclick: () => void navigate({ name: 'detail', id: row.steamId }) });
 		const open = el('button', { class: 'icon more', title: 'Details and confirmations', ariaLabel: `Details for ${row.name}`, textContent: '›', onclick: () => void navigate({ name: 'detail', id: row.steamId }) });
 		const code = el('button', { class: 'code', type: 'button', title: 'Click to copy', onclick: () => void copy() });
 		const star = el('button', { class: 'icon star', type: 'button', onclick: async () => {
@@ -876,8 +936,7 @@ async function listScreen(): Promise<void> {
 		} });
 		li.append(
 			el('span', { class: 'avatar-slot' }),
-			el('span', { class: 'who' }, profileLink(row.steamId, row.name, 'name'), el('span', { class: 'sid' }), el('span', { class: 'note' }), el('span', { class: 'bans' })),
-			badge,
+			el('span', { class: 'who' }, el('span', { class: 'name-line' }, profileLink(row.steamId, row.name, 'name'), el('span', { class: 'flags' })), el('span', { class: 'sid' }), el('span', { class: 'note' })),
 			code,
 			star,
 			open,
@@ -895,7 +954,7 @@ async function listScreen(): Promise<void> {
 			slot.hidden = !settings.showAvatars;
 		}
 		li.querySelector('.name')!.textContent = accountLabel(row.name, row.nickname);
-		li.dataset['name'] = `${row.name} ${row.nickname ?? ''} ${row.note}`.toLowerCase();
+		li.dataset['name'] = `${row.name} ${row.nickname ?? ''} ${row.note} ${row.tags.join(' ')}`.toLowerCase();
 		li.dataset['pinned'] = row.pinned ? '1' : '0';
 		const starBtn = li.querySelector<HTMLButtonElement>('.star')!;
 		starBtn.textContent = row.pinned ? '★' : '☆';
@@ -905,10 +964,8 @@ async function listScreen(): Promise<void> {
 		const noteEl = li.querySelector<HTMLElement>('.note')!;
 		noteEl.textContent = row.note;
 		noteEl.hidden = !row.note;
-		const bansEl = li.querySelector<HTMLElement>('.bans')!;
-		bansEl.replaceChildren(...row.bans.map((b) => el('span', { class: 'ban-tag', textContent: b })));
-		bansEl.hidden = row.bans.length === 0;
 		li.classList.toggle('banned', row.bans.length > 0);
+		li.dataset['tags'] = row.tags.join('\n');
 		li.dataset['state'] = row.state;
 		li.dataset['pending'] = String(row.pending ?? 0);
 		const sid = li.querySelector<HTMLElement>('.sid')!;
@@ -917,24 +974,7 @@ async function listScreen(): Promise<void> {
 		sid.hidden = !sub;
 		li.querySelector('.code')!.textContent = row.code;
 
-		const badge = li.querySelector<HTMLButtonElement>('.badge')!;
-		badge.className = 'badge';
-		badge.hidden = false;
-		if (row.state === 'signin') {
-			badge.textContent = 'Sign in';
-			badge.classList.add('warn');
-			badge.title = 'Needed to see confirmations';
-		} else if (row.state === 'error') {
-			badge.textContent = 'Retry';
-			badge.classList.add('warn');
-			badge.title = 'Could not check confirmations';
-		} else if (row.pending) {
-			badge.textContent = `${row.pending} pending`;
-			badge.classList.add('hot');
-			badge.title = 'Review confirmations';
-		} else {
-			badge.hidden = true;
-		}
+		drawFlags(li, row);
 		li.querySelector<HTMLElement>('.bar i')!.style.width = `${(row.remaining / 30) * 100}%`;
 		li.classList.toggle('expiring', row.remaining <= 5);
 	}
@@ -1006,7 +1046,7 @@ async function confirmsScreen(): Promise<void> {
 				'div',
 				{ class: 'group-head' },
 				profileLink(a.steamId, accountLabel(a.name, a.nickname), 'name'),
-				note ? el('button', { class: 'badge warn', type: 'button', textContent: note, onclick: () => void navigate({ name: 'detail', id: a.steamId }) }) : el('span', { class: 'hint', textContent: `${items.length}` })
+				note ? el('button', { class: 'flag warn', type: 'button', textContent: note, onclick: () => void navigate({ name: 'detail', id: a.steamId }) }) : el('span', { class: 'hint', textContent: `${items.length}` })
 			);
 			const bulk = items.filter((i) => !i.critical);
 			if (bulk.length > 1) {
@@ -1055,6 +1095,7 @@ async function todoScreen(): Promise<void> {
 	const SECTIONS: { kind: TodoItem['kind']; title: string; hint: string }[] = [
 		{ kind: 'activation', title: 'Finish activation', hint: 'An authenticator was added to Steam but never activated.' },
 		{ kind: 'signin', title: 'Sign in', hint: 'A sign-in is needed to see confirmations.' },
+		{ kind: 'expiring', title: 'Sign-in running out', hint: 'These accounts have no saved password, so confirmations stop when the sign-in runs out. Saving the password lets the app renew it by itself.' },
 		{ kind: 'password', title: 'Save a password', hint: 'Lets the app sign in by itself. Saved in plain text on this computer.' },
 		{ kind: 'revocation', title: 'Add the revocation code', hint: 'Needed to remove Steam Guard from an account. It looks like R12345.' }
 	];
@@ -1080,8 +1121,8 @@ async function todoScreen(): Promise<void> {
 			const rows = mine.map((it) => {
 				const head = el('div', { class: 'todo-head' }, profileLink(it.steamId, it.name, 'name'), el('span', { class: 'hint', textContent: it.detail }));
 				let action: HTMLElement;
-				if (it.kind === 'password' || it.kind === 'revocation') {
-					const isPw = it.kind === 'password';
+				if (it.kind === 'password' || it.kind === 'revocation' || it.kind === 'expiring') {
+					const isPw = it.kind !== 'revocation';
 					const input = el('input', { type: isPw ? 'password' : 'text', placeholder: isPw ? 'Steam password' : 'R12345', autocomplete: 'off', spellcheck: false, ariaLabel: isPw ? `Password for ${it.name}` : `Revocation code for ${it.name}` });
 					const form = el('form', { class: 'todo-form' }, input, el('button', { class: 'small primary', type: 'submit', textContent: 'Save' }), el('button', { class: 'link', type: 'button', textContent: 'Not needed', onclick: () => void ignore(it) }));
 					form.addEventListener('submit', async (e) => {
@@ -1322,7 +1363,7 @@ async function exportScreen(): Promise<void> {
 	let accQuery = '';
 	const accFilter = el('input', { type: 'text', class: 'search acc-filter', placeholder: 'Filter accounts…', ariaLabel: 'Filter accounts', spellcheck: false });
 	accFilter.addEventListener('input', () => { accQuery = accFilter.value.trim().toLowerCase(); drawAccounts(); });
-	const matchesFilter = (a: { steamId: string; name: string; nickname: string | null }): boolean => !accQuery || `${a.name} ${a.nickname ?? ''} ${a.steamId}`.toLowerCase().includes(accQuery);
+	const matchesFilter = (a: { steamId: string; name: string; nickname: string | null; tags: string[] }): boolean => !accQuery || `${a.name} ${a.nickname ?? ''} ${a.steamId} ${a.tags.join(' ')}`.toLowerCase().includes(accQuery);
 	const accCount = el('span', { class: 'hint' });
 	function setCount(visible: number): void {
 		accCount.textContent = `${chosen.size} of ${accountsList.length} selected${accQuery ? ` · ${visible} shown` : ''}`;
@@ -1745,7 +1786,15 @@ async function detailScreen(id: string): Promise<void> {
 	};
 	noteInput.addEventListener('change', () => void saveNote());
 	noteInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') noteInput.blur(); });
-	const noteRow = el('div', { class: 'note-row' }, noteInput, el('div', { class: 'chips' }, pinBtn), el('p', { class: 'hint', textContent: 'Shown under the name on the Codes page and searched by the filter. Stored in data/meta.json, not in the maFile.' }));
+	const tagsInput = el('input', { type: 'text', class: 'search', maxLength: 140, placeholder: 'Tags, separated by commas (up to 6)', value: d.value.tags.join(', '), ariaLabel: 'Tags', spellcheck: false });
+	tagsInput.addEventListener('change', async () => {
+		const r = await api.setMeta(id, { tags: tagsInput.value });
+		if (!r.ok) return toast(r.error, true);
+		tagsInput.value = r.value.tags.join(', ');
+		toast('Tags saved');
+	});
+	tagsInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tagsInput.blur(); });
+	const noteRow = el('div', { class: 'note-row' }, noteInput, tagsInput, el('div', { class: 'chips' }, pinBtn), el('p', { class: 'hint', textContent: 'The note shows under the name, tags next to it, and the filter searches both. Stored in data/meta.json, not in the maFile.' }));
 
 	const body = el('div', { class: 'conf' });
 	const refreshBtn = el('button', { class: 'icon', title: 'Check now', ariaLabel: 'Check for confirmations', textContent: '↻', onclick: async () => {
@@ -1791,8 +1840,11 @@ async function detailScreen(id: string): Promise<void> {
 				'div',
 				{ class: 'groups' },
 				el('section', { class: 'group profile-card' }, profile),
-				...(d.value.bans.length ? [el('section', { class: 'group ban-box' }, el('h2', { class: 'todo-title', textContent: 'Steam shows' }), el('div', { class: 'chips' }, ...d.value.bans.map((b) => el('span', { class: 'ban-tag', textContent: b }))), el('p', { class: 'hint', textContent: `${d.value.banNote ? d.value.banNote + ' ' : ''}As of the last check. Turn this off under Settings, Watch for bans.` }))] : []),
-				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Note' }), noteRow),
+				...(d.value.bans.length || d.value.banHistory.length ? [el('section', { class: 'group ban-box' }, el('h2', { class: 'todo-title', textContent: 'Bans' }),
+					d.value.bans.length ? el('div', { class: 'chips' }, ...d.value.bans.map((b) => el('span', { class: 'ban-tag', textContent: b }))) : el('p', { class: 'hint', textContent: 'No bans at the moment.' }),
+					el('p', { class: 'hint', textContent: `${d.value.banNote ? d.value.banNote + ' ' : ''}As of the last check. Turn this off under Settings, Watch for bans.` }),
+					...(d.value.banHistory.length ? [el('ul', { class: 'ban-history' }, ...[...d.value.banHistory].reverse().map((e) => el('li', {}, el('span', { class: 'hint', textContent: new Date(e.at).toLocaleDateString() }), ` ${e.what}`)))] : []))] : []),
+				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Note and tags' }), noteRow),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Copy' }), chips, pwBlock),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Open on Steam, signed in' }), webBar, el('p', { class: 'hint', textContent: 'Opens a separate window that is already logged in as this account. Nothing is kept when you close it.' })),
 				el('section', { class: 'group' }, el('div', { class: 'section-head' }, el('h2', { class: 'todo-title', textContent: 'Confirmations' }), refreshBtn), body),

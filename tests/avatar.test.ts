@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AvatarCache, extractBans, extractPersonaName, isBanned } from '../src/main/avatar';
+import { AvatarCache, banLabels, extractBans, extractPersonaName, isBanned } from '../src/main/avatar';
 
 const ID = '76561198000000001';
 const xml = (name: string) => `<profile><steamID64>${ID}</steamID64><steamID><![CDATA[${name}]]></steamID><avatarFull><![CDATA[https://avatars.steamstatic.com/abc_full.jpg]]></avatarFull></profile>`;
@@ -77,5 +77,14 @@ describe('bans', () => {
 		for (let i = 0; i < 200 && !cache.bans(ID)?.vac; i++) await new Promise((r) => setTimeout(r, 20));
 		expect(news).toEqual(['a VAC ban']);
 		expect(images).toBe(1);
+	});
+	it('labels every kind of ban and keeps a history of what appeared', () => {
+		expect(banLabels({ vac: true, vacCount: 2, gameBans: 1, community: true, trade: 'Probation', limited: false })).toEqual(['VAC ban ×2', 'Game ban', 'Community ban', 'Trade probation']);
+		expect(banLabels({ vac: false, trade: 'None', limited: true })).toEqual([]);
+		const cache = new AvatarCache(mkdtempSync(join(tmpdir(), 'av-')), () => undefined, 'https://example.test/profiles', () => undefined);
+		cache.setBans(ID, { vac: false, trade: 'None', limited: false });
+		cache.setBans(ID, { vac: true, vacCount: 1, trade: 'None', limited: false });
+		cache.setBans(ID, { vac: false, trade: 'None', limited: false });
+		expect(cache.history(ID).map((e) => e.what)).toEqual(['New: VAC ban', 'Bans lifted']);
 	});
 });

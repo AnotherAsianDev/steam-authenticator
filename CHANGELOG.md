@@ -3,11 +3,15 @@
 ## 0.9.0
 - New compact design: smaller rows, avatars and codes so more fits on screen, and a side menu that collapses to icons. Two small icons at the bottom of the menu collapse/expand it and switch the theme (system, light, dark).
 - New "columns" view: compact rows with two or more accounts per line, depending on the window width. Grid and columns use the full window width.
-- Right-click an account: copy code, username, SteamID64 or saved password; pin; details and note; confirmations; check confirmations now; open the profile, inventory or trade offers; move to trash.
+- Right-click an account: a clean menu in three groups (Copy, Account, Open on Steam) plus Move to trash, with arrow-key navigation.
+- Status marks moved out of the way: bans, waiting confirmations, sign-in problems and tags are now small icons right after the name (hover for the meaning), so rows keep their height. A banned account also gets a red outline.
+- Tags: up to 6 short tags per account (account page), shown next to the name, searched by the filter, with a tag filter menu on the Codes page.
+- Ban history: what appeared or was lifted and when, on the account page.
+- Sign-in warning: an account without a saved password gets a To do item, an icon and a Health check line when its saved sign-in has 14 days or less left. Saving the password lets the app renew it by itself.
 - Optional Steam Web API key (Settings): checked with Steam before it is saved, can be tested again later or removed. With it, bans (VAC with count, game bans, community bans, trade bans, days since the last ban) come from the official API for all accounts in one request every 12 hours. The key is stored with the saved passwords (encrypted with a master password) and is hidden from the log.
 - Ban check: the public profile page that is already read for the name and picture also says whether an account has a VAC ban or a trade ban. Such accounts get a red tag in the list, a "banned" chip in the overview, a section on the account page and a line in the Health check, and a new ban is reported as soon as it is seen. Profiles are now read about every 12 hours per account instead of weekly (one request each, the picture only when it changed). Turn it off with Settings, Watch for bans. Community bans and game bans are not part of that page; see the notes.
 - Export, Codes and the account page: pinned accounts first, as before.
-- Cleanup: removed the Density setting (the design is compact now), unused code and imports, and merged the profile name and picture address files into one `data/avatars/profiles.json` (older files are read once and carried over). The build now fails on unused code.
+- Cleanup: the stylesheet's account-list rules are now one section instead of layered overrides; ban texts live in one place; removed the Density setting (the design is compact now), unused code and imports, and merged the profile name and picture address files into one `data/avatars/profiles.json` (older files are read once and carried over). The build now fails on unused code.
 - Fixed the star overlapping the details arrow in the grid layout.
 
 ## 0.8.0
