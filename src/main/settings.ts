@@ -1,6 +1,9 @@
 import { cleanFields } from './exporter';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 
+export const SORT_OPTIONS = ['added-asc', 'added-desc', 'name-asc', 'name-desc', 'pending'] as const;
+export type SortBy = (typeof SORT_OPTIONS)[number];
+
 export interface Settings {
 	theme: 'system' | 'dark' | 'light';
 	density: 'comfortable' | 'compact';
@@ -25,6 +28,8 @@ export interface Settings {
 	exportSkipIncomplete: boolean;
 	/** Ask GitHub once a day whether a newer release exists. Nothing is downloaded. */
 	checkUpdates: boolean;
+	/** Order of the account list. */
+	sortBy: SortBy;
 	/** A version the user chose to hide the notice for. */
 	updateDismissed: string;
 }
@@ -45,6 +50,7 @@ export const DEFAULTS: Settings = {
 	exportDelimiter: ':',
 	exportSkipIncomplete: false,
 	checkUpdates: true,
+	sortBy: 'added-asc',
 	updateDismissed: ''
 };
 
@@ -73,6 +79,7 @@ export function sanitize(input: unknown): Settings {
 				? o['exportDelimiter']
 				: DEFAULTS.exportDelimiter,
 		exportSkipIncomplete: typeof o['exportSkipIncomplete'] === 'boolean' ? o['exportSkipIncomplete'] : DEFAULTS.exportSkipIncomplete,
+		sortBy: oneOf(o['sortBy'], SORT_OPTIONS, DEFAULTS.sortBy),
 		checkUpdates: typeof o['checkUpdates'] === 'boolean' ? o['checkUpdates'] : DEFAULTS.checkUpdates,
 		updateDismissed: typeof o['updateDismissed'] === 'string' && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(o['updateDismissed']) ? o['updateDismissed'] : '',
 		importFolders: Array.isArray(o['importFolders'])

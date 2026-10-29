@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -36,6 +36,17 @@ export class MaFileStore {
 
 	remove(steamId: string): void {
 		rmSync(this.path(steamId), { force: true });
+	}
+
+	/** The earlier of the file's creation and modification time, in milliseconds; undefined if unknown. */
+	fileTime(steamId: string): number | undefined {
+		try {
+			const s = statSync(this.path(steamId));
+			const times = [s.birthtimeMs, s.mtimeMs].filter((t) => t > 0);
+			return times.length ? Math.min(...times) : undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	list(): string[] {

@@ -20,6 +20,7 @@ import { StateCache } from './statecache';
 import { Enrollment, httpPost, steamLogin } from './enroll';
 import { MaFileStore } from './store';
 import { UpdateChecker } from './updatecheck';
+import { AddedDates } from './addeddates';
 import { importLines, importOne, type LineImportDeps, type LineResult } from './lineimport';
 import { Trash } from './trash';
 import { checkPin, DevicePin, Vault } from './vault';
@@ -36,6 +37,7 @@ const clockReady = syncClock();
 const migrated = migrateLegacy(legacyData, layout);
 const data = layout.data;
 const store = new MaFileStore(layout.maFiles);
+const addedDates = new AddedDates(join(layout.data, 'added.json'));
 const vault = new Vault(join(data, 'vault.json'));
 // The PIN lives on this PC only, never in the (possibly synced) program folder.
 const devicePin = new DevicePin(join(process.env['LOCALAPPDATA'] ?? app.getPath('appData'), 'AuthenticatorDevice'), () => vault.id);
@@ -224,12 +226,14 @@ function registerIpc(): void {
 		const t = steamNow();
 		const showAvatars = settings.get().showAvatars;
 		const wantProfiles = showAvatars || settings.get().showNickname;
-		return accounts.ids().map((steamId) => {
+		const ids = accounts.ids();
+		const rows = ids.map((steamId) => {
 			const a = accounts.get(steamId)!;
 			const st = accounts.status(steamId);
 			if (wantProfiles) avatars.ensure(steamId);
 			return {
 				steamId,
+				addedAt: addedDates.get(steamId, () => store.fileTime(steamId)),
 				name: a.accountName,
 				code: generateCode(a.sharedSecret, t),
 				remaining: secondsRemaining(t),
@@ -239,6 +243,9 @@ function registerIpc(): void {
 				pending: st.state === 'ok' ? st.items.length : null
 			};
 		});
+		// Never prune against an empty list: that is how it looks for a moment while the folder is read.
+		if (ids.length) addedDates.save(ids);
+		return rows;
 	});
 	handle('avatar', (steamId: unknown) => avatars.get(known(steamId)) ?? null);
 

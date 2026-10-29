@@ -234,6 +234,7 @@ input[type='password'], input[type='text'], textarea.lines {
 .group .item:last-child { border-bottom: 0; }
 .empty-state { margin-top: 56px; }
 .filterbar select { width: 100%; }
+.filterbar .filter-line select { width: auto; }
 
 /* app shell */
 .shell { display: grid; grid-template-columns: 240px 1fr; height: 100vh; }
@@ -392,3 +393,6 @@ label.f .hint.fine { margin: 0; font-size: 12px; }
 .update-note { position: fixed; right: 20px; bottom: 20px; z-index: 45; max-width: 360px; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--accent); border-radius: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
 .update-note p { margin: 4px 0 0; }
 .update-note .row-actions { justify-content: flex-end; }
+
+.filter-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.filterbar select.sort { width: auto; font-size: 13px; padding: 5px 10px; border-radius: 999px; color: var(--muted); }

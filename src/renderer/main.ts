@@ -1,5 +1,7 @@
 interface Row {
 	steamId: string;
+	/** Milliseconds since 1970. */
+	addedAt: number;
 	name: string;
 	nickname: string | null;
 	code: string;
@@ -35,6 +37,7 @@ interface Settings {
 	clipboardClearSeconds: number;
 	autoDetect: boolean;
 	checkUpdates: boolean;
+	sortBy: SortBy;
 	updateDismissed: string;
 	importFolders: string[];
 	todoIgnored: string[];
@@ -51,6 +54,9 @@ interface EnrollState {
 	revocationCode?: string;
 	resumed?: boolean;
 }
+type SortBy = 'added-asc' | 'added-desc' | 'name-asc' | 'name-desc' | 'pending';
+const SORTS: [SortBy, string][] = [['added-asc', 'Added: oldest first'], ['added-desc', 'Added: newest first'], ['name-asc', 'Name: A to Z'], ['name-desc', 'Name: Z to A'], ['pending', 'Most pending first']];
+
 interface TodoItem {
 	kind: 'signin' | 'password' | 'revocation' | 'activation';
 	steamId: string;
@@ -613,7 +619,37 @@ async function listScreen(): Promise<void> {
 		none.hidden = shown > 0 || list.children.length === 0;
 	}
 	search.addEventListener('input', () => { query = search.value; applyFilter(); });
-	const filterBar = el('div', { class: 'filterbar' }, search, chipRow);
+	let lastRows: Row[] = [];
+	const sortSelect = el('select', { class: 'sort', ariaLabel: 'Sort accounts', title: 'Sort accounts' },
+		...SORTS.map(([v, text]) => el('option', { value: v, textContent: text, selected: settings.sortBy === v })));
+	sortSelect.addEventListener('change', async () => {
+		const r = await api.setSettings({ sortBy: sortSelect.value as SortBy });
+		if (!r.ok) return toast(r.error, true);
+		applySettings(r.value);
+		applyOrder(lastRows);
+	});
+	/** Puts the rows in the chosen order. Only touches the page when the order actually differs, so the list does not flicker. */
+	function applyOrder(rows: Row[]): void {
+		const label = (x: Row): string => accountLabel(x.name, x.nickname).toLowerCase();
+		const byName = (a: Row, b: Row): number => label(a).localeCompare(label(b), undefined, { numeric: true }) || a.steamId.localeCompare(b.steamId);
+		const by = settings.sortBy;
+		const sorted = [...rows].sort((a, b) => {
+			if (by === 'added-asc') return a.addedAt - b.addedAt || byName(a, b);
+			if (by === 'added-desc') return b.addedAt - a.addedAt || byName(a, b);
+			if (by === 'name-asc') return byName(a, b);
+			if (by === 'name-desc') return byName(b, a);
+			return (b.pending ?? 0) - (a.pending ?? 0) || byName(a, b);
+		});
+		const items = Array.from(list.querySelectorAll<HTMLLIElement>('li'));
+		const current = items.map((li) => li.dataset['id']);
+		if (current.length === sorted.length && current.every((id, i) => id === sorted[i]!.steamId)) return;
+		const byId = new Map(items.map((li) => [li.dataset['id']!, li] as const));
+		for (const row of sorted) {
+			const li = byId.get(row.steamId);
+			if (li) list.append(li);
+		}
+	}
+	const filterBar = el('div', { class: 'filterbar' }, search, el('div', { class: 'filter-line' }, chipRow, sortSelect));
 	const overview = el('section', { class: 'overview', hidden: true });
 	/** Account count and what is still missing, from the same list as the To do tab (ignored items are not counted). */
 	function drawOverview(total: number, todo: TodoItem[] | undefined): void {
@@ -656,6 +692,8 @@ async function listScreen(): Promise<void> {
 			updateRow(li, row);
 		}
 		existing.forEach((li) => li.remove());
+		lastRows = r.value;
+		applyOrder(r.value);
 		pendingTotal = r.value.reduce((n, x) => n + (x.pending ?? 0), 0);
 		setTabCount();
 		filterBar.hidden = r.value.length === 0;
@@ -1774,7 +1812,7 @@ async function settingsScreen(): Promise<void> {
 async function boot(): Promise<void> {
 	const s = await api.settings();
 	if (s.ok) applySettings(s.value);
-	else applySettings({ theme: 'system', density: 'comfortable', showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false, checkUpdates: true, updateDismissed: '' });
+	else applySettings({ theme: 'system', density: 'comfortable', showSteamId: false, showAvatars: true, showNickname: false, autoCheckSeconds: 0, checkOnStartup: true, clipboardClearSeconds: 30, autoDetect: true, importFolders: [], todoIgnored: [], exportFields: ['username', 'password', 'sharedSecret', 'identitySecret'], exportDelimiter: ':', exportSkipIncomplete: false, checkUpdates: true, sortBy: 'added-asc', updateDismissed: '' });
 	api.onChanged(() => refreshView());
 	api.onLogChanged(() => {
 		void updateLogCount();
