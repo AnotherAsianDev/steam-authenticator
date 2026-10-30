@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { UserError } from './errors';
+import { log } from './log';
 
 /**
  * Sending items from one account to another by trade offer.
@@ -103,8 +104,11 @@ export const fetchHttp: Http = async (req) => {
 const BROWSER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const cap = (s: string): string => (s.length > 300 ? `${s.slice(0, 300)}…` : s);
 
-function checkStatus(status: number): void {
-	if (status === 401 || status === 403 || (status >= 300 && status < 400)) throw new UserError('Steam no longer accepts this sign-in. Open the account page and sign in again');
+function checkStatus(status: number, what: string): void {
+	if (status === 401 || status === 403 || (status >= 300 && status < 400)) {
+		log.warn('trade', `Steam answered HTTP ${status} for ${what}`);
+		throw new UserError(`Steam refused ${what} (HTTP ${status}). Signing in again on the account page can help. If it keeps happening, Steam does not accept this account's session for this step`);
+	}
 	if (status === 429) throw new UserError('Steam is rate-limiting requests. Wait a few minutes and try again');
 	if (status >= 400) throw new UserError(`Steam answered HTTP ${status}`);
 }
@@ -181,7 +185,7 @@ export async function fetchInventory(http: Http, steamId: string, game: Game, co
 		const url = `https://steamcommunity.com/inventory/${steamId}/${game.appId}/${game.contextId}?l=english&count=2000${start ? `&start_assetid=${start}` : ''}`;
 		const res = await http({ method: 'GET', url, headers: { 'User-Agent': BROWSER, Cookie: cookie } });
 		if (res.status === 500 || res.status === 404) return { items: [], untradable: 0, locked: [], cut: false };
-		checkStatus(res.status);
+		checkStatus(res.status, 'reading the inventory');
 		let body: Record<string, unknown>;
 		try {
 			body = JSON.parse(res.text) as Record<string, unknown>;
@@ -201,7 +205,7 @@ export async function fetchInventory(http: Http, steamId: string, game: Game, co
 /** An account's own trade link, read from its trade-offer privacy page. */
 export async function fetchOwnTradeLink(http: Http, steamId: string, cookie: string): Promise<TradeLink | undefined> {
 	const res = await http({ method: 'GET', url: `https://steamcommunity.com/profiles/${steamId}/tradeoffers/privacy`, headers: { 'User-Agent': BROWSER, Cookie: cookie } });
-	checkStatus(res.status);
+	checkStatus(res.status, 'reading the trade link');
 	const m = /https:\/\/steamcommunity\.com\/tradeoffer\/new\/\?partner=(\d+)(?:&amp;|&)token=([\w-]+)/.exec(res.text);
 	if (!m) return undefined;
 	try {
@@ -253,7 +257,7 @@ export async function sendOffer(http: Http, cookieBase: string, to: TradeLink, g
 		},
 		body
 	});
-	checkStatus(res.status);
+	checkStatus(res.status, 'sending the offer');
 	let reply: Record<string, unknown>;
 	try {
 		reply = JSON.parse(res.text) as Record<string, unknown>;
@@ -293,7 +297,7 @@ export function parseOpenOffers(body: unknown): OpenOffer[] {
 export async function fetchOpenOffers(http: Http, accessToken: string): Promise<OpenOffer[]> {
 	const url = `https://api.steampowered.com/IEconService/GetTradeOffers/v1/?${new URLSearchParams({ access_token: accessToken, get_sent_offers: '1', get_received_offers: '0', active_only: '1', get_descriptions: '0' })}`;
 	const res = await http({ method: 'GET', url, headers: { 'User-Agent': BROWSER } });
-	checkStatus(res.status);
+	checkStatus(res.status, 'reading the open offers');
 	try {
 		return parseOpenOffers(JSON.parse(res.text));
 	} catch {
@@ -309,5 +313,5 @@ export async function cancelOffer(http: Http, accessToken: string, offerId: stri
 		headers: { 'User-Agent': BROWSER, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
 		body: new URLSearchParams({ access_token: accessToken, tradeofferid: offerId }).toString()
 	});
-	checkStatus(res.status);
+	checkStatus(res.status, 'cancelling the offer');
 }

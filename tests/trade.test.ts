@@ -53,7 +53,7 @@ describe('inventory', () => {
 		expect(inv.cut).toBe(false);
 	});
 	it('maps a dead session to a clear message', async () => {
-		await expect(fetchInventory(async () => ({ status: 302, text: '' }), '76561199000000001', GAMES[0]!, 'c')).rejects.toThrow(/sign in/i);
+		await expect(fetchInventory(async () => ({ status: 302, text: '' }), '76561199000000001', GAMES[0]!, 'c')).rejects.toThrow(/refused reading the inventory \(HTTP 302\)/);
 	});
 });
 
