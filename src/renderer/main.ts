@@ -758,13 +758,14 @@ function drawFlags(li: HTMLElement, row: Row): void {
 		return b;
 	};
 	const detail = (): void => void navigate({ name: 'detail', id: row.steamId });
-	/** Fixed places first, so the same kind of mark sits in the same spot on every row: confirmations, sign-in expiry, trade limits, note. Bans and the tag follow. */
+	/** What needs doing (confirmations waiting, sign-in needed) sits right after the name. The rest has fixed places, so the same mark is in the same spot on every row: sign-in expiry, trade limits, note. Bans and the tag follow. */
 	const gap = (): HTMLElement => el('span', { class: 'flag-gap', ariaHidden: 'true' });
 	const nodes: HTMLElement[] = [];
-	if (row.state === 'signin') nodes.push(flag('warn', svgIcon('lock'), 'Sign in needed to see confirmations', detail));
-	else if (row.state === 'error') nodes.push(flag('warn', '↻', 'Could not check confirmations. Click for details', detail));
-	else if (row.pending) nodes.push(flag('hot', String(row.pending), `${row.pending} confirmation${row.pending === 1 ? '' : 's'} waiting. Click to review`, () => void navigate({ name: 'confirms' })));
-	else nodes.push(gap());
+	const status: HTMLElement[] = [];
+	if (row.state === 'signin') status.push(flag('warn', svgIcon('lock'), 'Sign in needed to see confirmations', detail));
+	else if (row.state === 'error') status.push(flag('warn', '↻', 'Could not check confirmations. Click for details', detail));
+	else if (row.pending) status.push(flag('hot', String(row.pending), `${row.pending} confirmation${row.pending === 1 ? '' : 's'} waiting. Click to review`, () => void navigate({ name: 'confirms' })));
+	li.querySelector<HTMLElement>('.status')!.replaceChildren(...status);
 	nodes.push(row.sessionDays !== null ? flag('warn', svgIcon('clock'), `The saved sign-in runs out in ${row.sessionDays} day${row.sessionDays === 1 ? '' : 's'}. Save the password to keep it going`, detail) : gap());
 	nodes.push(row.restrictions.length ? flag('warn', svgIcon('limit'), `Trading and market: ${row.restrictions.join('. ')}`, detail) : gap());
 	nodes.push(row.note ? flag('note', svgIcon('note'), row.note, detail) : gap());
@@ -999,7 +1000,7 @@ async function listScreen(): Promise<void> {
 		} });
 		li.append(
 			el('span', { class: 'avatar-slot' }),
-			el('span', { class: 'who' }, el('span', { class: 'name-line' }, profileLink(row.steamId, row.name, 'name')), el('span', { class: 'sid' })),
+			el('span', { class: 'who' }, el('span', { class: 'name-line' }, profileLink(row.steamId, row.name, 'name'), el('span', { class: 'status' })), el('span', { class: 'sid' })),
 			el('span', { class: 'flags' }),
 			code,
 			star,

@@ -147,9 +147,10 @@ button.flag { cursor: pointer; }
 .list.columns .code { font-size: 17px; padding: 3px 9px; }
 .list.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .list.grid .row { grid-template-columns: auto 1fr auto auto; grid-template-rows: auto auto auto auto; gap: 4px 10px; padding: 14px; }
-.list.grid .row > .who, .list.grid .name-line { display: contents; }
+.list.grid .row > .who { display: contents; }
+.list.grid .name-line { grid-column: 2; grid-row: 1; align-self: end; min-width: 0; }
 .list.grid .row > .avatar-slot { grid-column: 1; grid-row: 1 / 3; align-self: center; }
-.list.grid .name { grid-column: 2; grid-row: 1; align-self: end; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list.grid .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list.grid .sid { grid-column: 2; grid-row: 2; align-self: start; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list.grid .row > .star { grid-column: 3; grid-row: 1 / 3; align-self: center; }
 .list.grid .row > .more { grid-column: 4; grid-row: 1 / 3; align-self: center; }
@@ -651,3 +652,5 @@ main.fill > .hint { flex: none; }
 .ctx-item .tick-mark { margin-left: auto; color: var(--accent); }
 .view-btn { margin-left: auto; }
 .list.dense:not(.columns):not(.grid) { row-gap: 0; }
+.status { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.status:empty { display: none; }

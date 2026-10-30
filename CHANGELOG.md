@@ -5,7 +5,7 @@
 - New compact list view: one thin line per account, about 36 px instead of 56, still showing the login name and SteamID64 when those settings are on.
 - The time left on a code is now the border of the code box, which empties clockwise and turns red in the last 5 seconds, instead of a line across the whole row. Every view uses it.
 - The page called Codes is now called Accounts, with a people icon in the side menu instead of the shield.
-- The small marks on an account sit in fixed places, so the same mark is in the same spot on every row of the list and compact list: waiting confirmations, sign-in expiry, trade limits, note, then bans and the tag.
+- The small marks on an account sit in fixed places, so the same mark is in the same spot on every row of the list and compact list: sign-in expiry, trade limits, note, then bans and the tag. Waiting confirmations (and "sign in needed") sit right after the name.
 - The four views (list, compact list, columns, grid) sit in one View menu instead of four buttons.
 - Profile picture: an account whose Steam profile was never set up now shows Steam's default picture instead of a letter.
 - New "columns" view: compact rows with two or more accounts per line, depending on the window width. Grid and columns use the full window width.
