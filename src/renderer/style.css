@@ -79,7 +79,7 @@ button:focus-visible, .row:focus-visible, input:focus-visible, select:focus-visi
 /* accounts list: one compact row. List, columns and grid only change how the rows are arranged. */
 .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .row {
-	position: relative; display: grid; grid-template-columns: auto 1fr auto auto auto; align-items: center; gap: 0 12px;
+	position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto auto; align-items: center; gap: 0 12px;
 	padding: 8px 10px 8px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line);
 	transition: border-color 0.15s;
 }
@@ -87,9 +87,10 @@ button:focus-visible, .row:focus-visible, input:focus-visible, select:focus-visi
 .row.banned { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
 .row > .avatar-slot { grid-column: 1; display: flex; }
 .row > .who { grid-column: 2; }
-.row > .code { grid-column: 3; }
-.row > .star { grid-column: 4; }
-.row > .more { grid-column: 5; }
+.row > .flags { grid-column: 3; }
+.row > .code { grid-column: 4; }
+.row > .star { grid-column: 5; }
+.row > .more { grid-column: 6; }
 .avatar-slot { display: flex; }
 .avatar.sm { width: 32px; height: 32px; border-radius: 8px; font-size: 12px; }
 .who { display: flex; flex-direction: column; min-width: 0; }
@@ -124,6 +125,12 @@ button:focus-visible, .row:focus-visible, input:focus-visible, select:focus-visi
 
 /* small status marks after the name; the meaning is in the tooltip */
 .flags { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.flag-gap { width: 18px; height: 18px; flex: none; }
+.flags:empty { display: none; }
+.list.columns .flag-gap, .list.grid .flag-gap { display: none; }
+/* List and compact list: every row shares the same columns, so the marks line up from row to row. */
+.list:not(.columns):not(.grid) { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto auto; column-gap: 12px; row-gap: 6px; }
+.list:not(.columns):not(.grid) > .row { grid-column: 1 / -1; grid-template-columns: subgrid; }
 .flag {
 	display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px;
 	border-radius: 9px; font-size: 11px; font-weight: 650; color: var(--muted); background: var(--raised); border: 1px solid var(--line);
@@ -624,8 +631,8 @@ main.fill { display: flex; flex-direction: column; overflow: hidden; padding-bot
 main.fill > .hint { flex: none; }
 
 /* ------------------------------------------------------ compact list view -- */
-.list.dense { gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.list.dense .row { grid-template-columns: auto 1fr auto auto auto; gap: 0 10px; min-height: 36px; padding: 3px 8px 3px 12px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+.list.dense { row-gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.list.dense .row { column-gap: 10px; min-height: 36px; padding: 3px 8px 3px 12px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
 .list.dense .row:last-child { border-bottom: 0; }
 .list.dense .row:hover { background: var(--raised); transform: none; box-shadow: none; }
 .list.dense .row.banned { background: color-mix(in srgb, var(--danger) 6%, transparent); }
@@ -635,8 +642,6 @@ main.fill > .hint { flex: none; }
 .list.dense .sid { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .list.dense .code { font-size: 15px; letter-spacing: 0.14em; padding: 2px 9px; border-radius: 7px; }
 .list.dense .expiring .code { color: var(--danger); }
-.list.dense .row > .star { grid-column: 4; }
-.list.dense .row > .more { grid-column: 5; }
 .list.dense .icon { height: 26px; width: 26px; }
 .list.dense .row > * { grid-row: 1; }
 
@@ -645,3 +650,4 @@ main.fill > .hint { flex: none; }
 .view-btn .glyph { font-size: 15px; line-height: 1; }
 .ctx-item .tick-mark { margin-left: auto; color: var(--accent); }
 .view-btn { margin-left: auto; }
+.list.dense:not(.columns):not(.grid) { row-gap: 0; }

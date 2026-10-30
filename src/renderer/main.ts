@@ -247,7 +247,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 const ICONS: Record<string, string> = {
-	codes: '<path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m9 12 2 2 4-4"/>',
+	codes: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14.2c2.7.2 4.7 2.5 4.7 5.8"/>',
 	limit: '<circle cx="12" cy="12" r="9"/><path d="M14.5 9.2c-.4-.8-1.300-1.200-2.500-1.200-1.500 0-2.500.7-2.500 1.800 0 2.400 5 1.300 5 3.700 0 1.100-1 1.800-2.500 1.800-1.200 0-2.100-.4-2.500-1.300M12 6.500V8M12 16v1.500"/>',
 	trades: '<path d="M4 8h14l-3-3M20 16H6l3 3"/>',
 	confirms: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="m8.5 9 1.5 1.5L13 7.5M8.5 16l1.5 1.5L13 14.5M15.5 9.5h2M15.5 16.5h2"/>',
@@ -758,14 +758,17 @@ function drawFlags(li: HTMLElement, row: Row): void {
 		return b;
 	};
 	const detail = (): void => void navigate({ name: 'detail', id: row.steamId });
+	/** Fixed places first, so the same kind of mark sits in the same spot on every row: confirmations, sign-in expiry, trade limits, note. Bans and the tag follow. */
+	const gap = (): HTMLElement => el('span', { class: 'flag-gap', ariaHidden: 'true' });
 	const nodes: HTMLElement[] = [];
-	for (const label of row.bans) nodes.push(flag('ban', svgIcon(banIcon(label)), `Steam shows: ${label}`, detail));
 	if (row.state === 'signin') nodes.push(flag('warn', svgIcon('lock'), 'Sign in needed to see confirmations', detail));
 	else if (row.state === 'error') nodes.push(flag('warn', '↻', 'Could not check confirmations. Click for details', detail));
 	else if (row.pending) nodes.push(flag('hot', String(row.pending), `${row.pending} confirmation${row.pending === 1 ? '' : 's'} waiting. Click to review`, () => void navigate({ name: 'confirms' })));
-	if (row.sessionDays !== null) nodes.push(flag('warn', svgIcon('clock'), `The saved sign-in runs out in ${row.sessionDays} day${row.sessionDays === 1 ? '' : 's'}. Save the password to keep it going`, detail));
-	if (row.restrictions.length) nodes.push(flag('warn', svgIcon('limit'), `Trading and market: ${row.restrictions.join('. ')}`, detail));
-	if (row.note) nodes.push(flag('note', svgIcon('note'), row.note, detail));
+	else nodes.push(gap());
+	nodes.push(row.sessionDays !== null ? flag('warn', svgIcon('clock'), `The saved sign-in runs out in ${row.sessionDays} day${row.sessionDays === 1 ? '' : 's'}. Save the password to keep it going`, detail) : gap());
+	nodes.push(row.restrictions.length ? flag('warn', svgIcon('limit'), `Trading and market: ${row.restrictions.join('. ')}`, detail) : gap());
+	nodes.push(row.note ? flag('note', svgIcon('note'), row.note, detail) : gap());
+	for (const label of row.bans) nodes.push(flag('ban', svgIcon(banIcon(label)), `Steam shows: ${label}`, detail));
 	if (row.tags[0]) nodes.push(el('span', { class: 'tag', textContent: row.tags[0] }));
 	box.replaceChildren(...nodes);
 }
@@ -996,7 +999,8 @@ async function listScreen(): Promise<void> {
 		} });
 		li.append(
 			el('span', { class: 'avatar-slot' }),
-			el('span', { class: 'who' }, el('span', { class: 'name-line' }, profileLink(row.steamId, row.name, 'name'), el('span', { class: 'flags' })), el('span', { class: 'sid' })),
+			el('span', { class: 'who' }, el('span', { class: 'name-line' }, profileLink(row.steamId, row.name, 'name')), el('span', { class: 'sid' })),
+			el('span', { class: 'flags' }),
 			code,
 			star,
 			open
