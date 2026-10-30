@@ -124,12 +124,13 @@ function str(v: unknown, what = 'value'): string {
 	return v;
 }
 /** Why Steam may refuse trades or the market for this account, as far as the profile page and the maFile tell. */
+/** Steam holds trades and listings for up to 15 days when the mobile authenticator has been on for less than this. */
 const NEW_AUTHENTICATOR_DAYS = 7;
 function restrictions(steamId: string): string[] {
 	const out: string[] = [];
-	if (avatars.limited(steamId)) out.push('Limited account (under $5 spent): Steam blocks the market and restricts trading and more until $5 has been spent');
+	if (avatars.limited(steamId)) out.push('Limited account (under $5 spent): no Community Market, and Steam Community items (cards, emoticons, backgrounds) cannot be traded out. Game items like CS2 can be traded normally');
 	const age = accounts.authenticatorDays(steamId);
-	if (age !== undefined && age < NEW_AUTHENTICATOR_DAYS) out.push(`The authenticator was added ${age === 0 ? 'today' : `${age} day${age === 1 ? '' : 's'} ago`}: Steam can hold trades and market listings for a new authenticator`);
+	if (age !== undefined && age < NEW_AUTHENTICATOR_DAYS) out.push(`The authenticator was added ${age === 0 ? 'today' : `${age} day${age === 1 ? '' : 's'} ago`}: in its first 7 days Steam can hold trades and market listings for up to 15 days. CS2 items are not held`);
 	return out;
 }
 function known(steamId: unknown): string {

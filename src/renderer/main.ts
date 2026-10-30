@@ -2274,7 +2274,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 
 	const fromSel = el('select', { ariaLabel: 'Send from' }, ...acc.value.map((a) => el('option', { value: a.steamId, textContent: accountLabel(a.name, a.nickname), selected: a.steamId === id })));
 	fromSel.addEventListener('change', () => { if (!busy) void navigate({ name: 'trades', id: fromSel.value }); else fromSel.value = id; });
-	const grid = el('div', { class: 'items' });
+	const grid = el('div', { class: 'tiles' });
 	const lockedBox = el('div', { class: 'locked-box', hidden: true });
 	const info = el('p', { class: 'hint', textContent: '' });
 	const count = el('strong', { textContent: '0 selected' });
@@ -2340,7 +2340,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 				const some = !all && g.some((i) => picked.has(i.assetId));
 				const nameEl = el('span', { class: 'iname', textContent: first.name });
 				if (first.color) nameEl.style.color = `#${first.color}`;
-				const tile = el('button', { class: `item${all ? ' on' : some ? ' part' : ''}`, type: 'button', title: `${first.name}${first.type ? ` (${first.type})` : ''}`, ariaPressed: String(all), onclick: () => {
+				const tile = el('button', { class: `tile${all ? ' on' : some ? ' part' : ''}`, type: 'button', title: `${first.name}${first.type ? ` (${first.type})` : ''}`, ariaPressed: String(all), onclick: () => {
 					for (const i of g) (all ? picked.delete(i.assetId) : picked.add(i.assetId));
 					drawGrid();
 				} },
@@ -2364,10 +2364,10 @@ async function tradesScreen(wanted?: string): Promise<void> {
 		const total = locked.reduce((n, l) => n + l.count, 0);
 		lockedBox.replaceChildren(
 			el('h2', { textContent: `Not tradable right now (${total})` }),
-			el('div', { class: 'items' }, ...locked.map((l) => {
+			el('div', { class: 'tiles' }, ...locked.map((l) => {
 				const nameEl = el('span', { class: 'iname', textContent: l.name });
 				if (l.color) nameEl.style.color = `#${l.color}`;
-				const tile = el('div', { class: 'item locked', title: `${l.name}: ${when(l.until)}` },
+				const tile = el('div', { class: 'tile locked', title: `${l.name}: ${when(l.until)}` },
 					l.icon ? el('img', { src: itemImage(l.icon), alt: '', loading: 'lazy' }) : el('span', { class: 'noimg', textContent: '?' }),
 					nameEl,
 					el('span', { class: 'until', textContent: when(l.until) }));
