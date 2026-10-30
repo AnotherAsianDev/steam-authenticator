@@ -59,7 +59,7 @@ interface Settings {
 	autoDetect: boolean;
 	checkUpdates: boolean;
 	sortBy: SortBy;
-	layout: 'list' | 'columns' | 'grid';
+	layout: 'list' | 'dense' | 'columns' | 'grid';
 	updateDismissed: string;
 	importFolders: string[];
 	todoIgnored: string[];
@@ -834,9 +834,9 @@ async function listScreen(): Promise<void> {
 			if (li) list.append(li);
 		}
 	}
-	const layoutBtns = (['list', 'columns', 'grid'] as const).map((l) =>
+	const layoutBtns = (['list', 'dense', 'columns', 'grid'] as const).map((l) =>
 		el('button', {
-			class: 'seg', type: 'button', title: { list: 'List', columns: 'Columns', grid: 'Grid' }[l], ariaLabel: `${l} layout`, textContent: { list: '☰', columns: '▥', grid: '▦' }[l],
+			class: 'seg', type: 'button', title: { list: 'List', dense: 'Compact list', columns: 'Columns', grid: 'Grid' }[l], ariaLabel: `${l} layout`, textContent: { list: '☰', dense: '≡', columns: '▥', grid: '▦' }[l],
 			onclick: async () => {
 				const r = await api.setSettings({ layout: l });
 				if (!r.ok) return toast(r.error, true);
@@ -883,7 +883,8 @@ async function listScreen(): Promise<void> {
 	function drawLayout(): void {
 		list.classList.toggle('grid', settings.layout === 'grid');
 		list.classList.toggle('columns', settings.layout === 'columns');
-		layoutBtns.forEach((b, i) => b.classList.toggle('on', (['list', 'columns', 'grid'] as const)[i] === settings.layout));
+		list.classList.toggle('dense', settings.layout === 'dense');
+		layoutBtns.forEach((b, i) => b.classList.toggle('on', (['list', 'dense', 'columns', 'grid'] as const)[i] === settings.layout));
 	}
 	drawLayout();
 	const tagSelect = el('select', { class: 'sort', ariaLabel: 'Filter by tag', title: 'Filter by tag', hidden: true });
@@ -1029,6 +1030,7 @@ async function listScreen(): Promise<void> {
 
 		drawFlags(li, row);
 		li.querySelector<HTMLElement>('.bar i')!.style.width = `${(row.remaining / 30) * 100}%`;
+		li.querySelector<HTMLElement>('.bar')!.style.setProperty('--p', `${(row.remaining / 30) * 360}deg`);
 		li.classList.toggle('expiring', row.remaining <= 5);
 	}
 

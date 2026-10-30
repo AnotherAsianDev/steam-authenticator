@@ -6,7 +6,7 @@ A lean desktop Steam Guard authenticator for Windows. Plain maFiles next to the 
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/grid.png" alt="Grid layout"><br><sub>List, columns or grid layout, with an icon per ban type</sub></td>
+<td width="50%"><img src="docs/screenshots/grid.png" alt="Grid layout"><br><sub>List, compact list, columns or grid layout, with an icon per ban type</sub></td>
 <td width="50%"><img src="docs/screenshots/settings.png" alt="Settings"><br><sub>Settings in tabs: theme, bans and API key, security, import</sub></td>
 </tr>
 <tr>

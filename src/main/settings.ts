@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 export const SORT_OPTIONS = ['added-asc', 'added-desc', 'name-asc', 'name-desc', 'pending'] as const;
 export type SortBy = (typeof SORT_OPTIONS)[number];
-export const LAYOUT_OPTIONS = ['list', 'columns', 'grid'] as const;
+export const LAYOUT_OPTIONS = ['list', 'dense', 'columns', 'grid'] as const;
 export type Layout = (typeof LAYOUT_OPTIONS)[number];
 
 export interface Settings {
