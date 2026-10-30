@@ -523,11 +523,17 @@ function registerIpc(): void {
 		let problem = '';
 		const name = accounts.get(id)!.accountName;
 		const parts = chunk(chosen);
+		const summary = (list: typeof chosen): string => {
+			const by = new Map<string, number>();
+			for (const x of list) by.set(x.name, (by.get(x.name) ?? 0) + x.amount);
+			return [...by.entries()].sort((a, b) => b[1] - a[1]).map(([n, c]) => `${c}× ${n}`).join('\n');
+		};
+		log.info('trade', `${name} → ${toName}: ${g.name}, ${chosen.length} items in ${parts.length} offer${parts.length === 1 ? '' : 's'}`);
 		for (const [n, part] of parts.entries()) {
 			try {
 				if (n > 0) await pause(3000);
 				const sent = await sendOffer(fetchHttp, await cookieOf(id), to, g, part);
-				log.info('trade', `${name} sent offer ${sent.offerId} (${part.length} items) to ${toName}`);
+				log.info('trade', `${name} → ${toName}: offer ${sent.offerId}, ${g.name}, ${part.length} items`, summary(part));
 				let confirmed = !sent.needsMobile;
 				let note = sent.needsEmail ? 'Steam wants an email confirmation too' : '';
 				for (let attempt = 0; sent.needsMobile && !confirmed && attempt < 3; attempt++) {
@@ -539,6 +545,7 @@ function registerIpc(): void {
 					confirmed = true;
 				}
 				if (!confirmed) note = 'Sent, but still waiting for your confirmation. Open Confirmations';
+				log.info('trade', `${name}: offer ${sent.offerId} ${confirmed ? 'confirmed' : 'sent, not yet confirmed'}`);
 				offers.push({ offerId: sent.offerId, items: part.length, confirmed, note });
 			} catch (err) {
 				problem = err instanceof UserError ? err.message : 'Could not reach Steam';

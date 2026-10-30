@@ -75,7 +75,7 @@ export class Logger {
 
 	add(level: Level, area: string, message: string, err?: unknown): void {
 		const s = this.secrets();
-		const d = err === undefined ? undefined : describeError(err);
+		const d = err === undefined ? undefined : typeof err === 'string' ? { message: '', detail: err } : describeError(err);
 		const entry: Entry = {
 			time: Math.floor(Date.now() / 1000),
 			level,
@@ -97,7 +97,7 @@ export class Logger {
 
 	error = (area: string, message: string, err?: unknown): void => this.add('error', area, message, err);
 	warn = (area: string, message: string, err?: unknown): void => this.add('warn', area, message, err);
-	info = (area: string, message: string): void => this.add('info', area, message);
+	info = (area: string, message: string, detail?: string): void => this.add('info', area, message, detail);
 
 	list(): Entry[] {
 		return [...this.entries].reverse();

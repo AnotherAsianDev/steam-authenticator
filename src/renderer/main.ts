@@ -1203,7 +1203,7 @@ async function logScreen(): Promise<void> {
 	sessionStorageSet('logSeen', String(Math.floor(Date.now() / 1000)));
 	void updateLogCount();
 	let entries: LogEntry[] = [];
-	let only: 'all' | 'problems' = 'problems';
+	let only: 'all' | 'problems' | 'trades' = 'problems';
 	let q = '';
 	const list = el('div', { class: 'log-list' });
 	const search = el('input', { type: 'text', class: 'search', placeholder: 'Filter log', ariaLabel: 'Filter log', spellcheck: false });
@@ -1223,14 +1223,14 @@ async function logScreen(): Promise<void> {
 	const time = (t: number): string => new Date(t * 1000).toLocaleString();
 	function drawChips(): void {
 		chips.replaceChildren(
-			...([['problems', 'Warnings and errors'], ['all', 'Everything']] as const).map(([id, text]) =>
+			...([['problems', 'Warnings and errors'], ['trades', 'Trades'], ['all', 'Everything']] as const).map(([id, text]) =>
 				el('button', { class: `fchip${only === id ? ' on' : ''}`, type: 'button', textContent: text, onclick: () => { only = id; drawChips(); draw(); } })
 			)
 		);
 	}
 	function draw(): void {
 		const needle = q.trim().toLowerCase();
-		const shown = entries.filter((e) => (only === 'all' || e.level !== 'info') && (!needle || `${e.area} ${e.message} ${e.detail ?? ''}`.toLowerCase().includes(needle)));
+		const shown = entries.filter((e) => (only === 'all' || (only === 'trades' ? e.area === 'trade' : e.level !== 'info')) && (!needle || `${e.area} ${e.message} ${e.detail ?? ''}`.toLowerCase().includes(needle)));
 		list.replaceChildren(
 			...(shown.length
 				? shown.map((e) => {
@@ -1241,7 +1241,7 @@ async function logScreen(): Promise<void> {
 						else row.classList.add('plain');
 						return row;
 					})
-				: [el('p', { class: 'hint center-text', textContent: only === 'problems' ? 'No warnings or errors.' : 'The log is empty.' })])
+				: [el('p', { class: 'hint center-text', textContent: only === 'problems' ? 'No warnings or errors.' : only === 'trades' ? 'No trades yet.' : 'The log is empty.' })])
 		);
 	}
 	async function load(): Promise<void> {
@@ -2457,11 +2457,11 @@ async function tradesScreen(wanted?: string): Promise<void> {
 		tradesHeader(),
 		el('main', { class: 'send' },
 			el('div', { class: 'send-from' }, el('span', { textContent: 'Send items from' }), fromSel),
-			el('div', { class: 'send-bar' }, gameSel, search, el('button', { class: 'small', type: 'button', textContent: 'Select all shown', onclick: () => { for (const [, g] of visible()) for (const i of g) picked.add(i.assetId); drawGrid(); } }), el('button', { class: 'small', type: 'button', textContent: 'None', onclick: () => { picked.clear(); drawGrid(); } })),
+			el('div', { class: 'send-bar' }, field('Game', gameSel), field('Filter', search), el('button', { class: 'small', type: 'button', textContent: 'Select all shown', onclick: () => { for (const [, g] of visible()) for (const i of g) picked.add(i.assetId); drawGrid(); } }), el('button', { class: 'small', type: 'button', textContent: 'None', onclick: () => { picked.clear(); drawGrid(); } })),
 			info,
 			grid,
 			lockedBox,
-			el('div', { class: 'send-to' }, el('div', { class: 'send-count' }, count), targetSel, sendBtn),
+			el('div', { class: 'send-to' }, el('div', { class: 'send-count' }, count), field('Send to', targetSel), sendBtn),
 			linkBox,
 			confirmBox,
 			result)
@@ -2469,6 +2469,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 	void load();
 }
 
+const field = (label: string, control: HTMLElement): HTMLElement => el('label', { class: 'labelled' }, el('span', { textContent: label }), control);
 const sleep = (ms: number): Promise<void> => new Promise((done) => window.setTimeout(done, ms));
 /** Stop everything on these; carrying on would only make Steam stricter. */
 const isLimit = (message: string): boolean => /rate|too many|slow down|wait a few/i.test(message);
@@ -2504,7 +2505,7 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 		};
 		targetSel.replaceChildren(
 			el('option', { value: '', textContent: 'Choose the receiving account…' }),
-			...group('Your accounts', all.filter((a) => !sources.has(a.steamId)).map((a) => el('option', { value: `a:${a.steamId}`, textContent: accountLabel(a.name, a.nickname) }))),
+			...group('Your accounts', all.map((a) => el('option', { value: `a:${a.steamId}`, textContent: accountLabel(a.name, a.nickname) }))),
 			...group('Saved trade links', saved.map((l) => el('option', { value: `l:${l.link}`, textContent: l.name }))),
 			el('option', { value: 'paste', textContent: 'Another trade link…' })
 		);
@@ -2512,13 +2513,42 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 		if (targetSel.value !== keep) targetSel.value = '';
 		linkInput.hidden = targetSel.value !== 'paste';
 	}
+	let listFilter = '';
+	let tagFilter = '';
+	const receiverId = (): string => (targetValue().startsWith('a:') ? targetValue().slice(2) : '');
+	const shownAccounts = (): Row[] => {
+		const q = listFilter.trim().toLowerCase();
+		return all.filter((a) => (!q || `${a.name} ${a.nickname ?? ''} ${a.note}`.toLowerCase().includes(q)) && (!tagFilter || a.tags.includes(tagFilter)));
+	};
+	const counter = el('strong', { textContent: '' });
+	const search = el('input', { type: 'text', class: 'search', placeholder: `Filter ${all.length} accounts`, ariaLabel: 'Filter accounts', spellcheck: false });
+	search.addEventListener('input', () => { listFilter = search.value; drawList(); });
+	const tagSel = el('select', { ariaLabel: 'Filter by tag', hidden: true });
+	const tags = [...new Set(all.flatMap((a) => a.tags))].sort((x, y) => x.localeCompare(y));
+	if (tags.length) {
+		tagSel.append(el('option', { value: '', textContent: 'All tags' }), ...tags.map((t) => el('option', { value: t, textContent: t })));
+		tagSel.hidden = false;
+		tagSel.addEventListener('change', () => { tagFilter = tagSel.value; drawList(); });
+	}
+	const pickAll = (on: boolean): void => {
+		if (busy) return;
+		for (const a of shownAccounts()) if (a.steamId !== receiverId()) { if (on) sources.add(a.steamId); else sources.delete(a.steamId); }
+		invalidate();
+		drawList();
+	};
+	const listBar = el('div', { class: 'bulk-bar' }, search, tagSel,
+		el('button', { class: 'small', type: 'button', textContent: 'Select all shown', onclick: () => pickAll(true) }),
+		el('button', { class: 'small', type: 'button', textContent: 'None', onclick: () => pickAll(false) }),
+		counter);
 	function drawList(): void {
-		const receiver = targetValue().startsWith('a:') ? targetValue().slice(2) : '';
-		list.replaceChildren(...all.map((a) => {
+		const receiver = receiverId();
+		counter.textContent = `${sources.size} of ${all.length} selected`;
+		const shown = shownAccounts();
+		list.replaceChildren(...(shown.length ? shown.map((a) => {
 			const box = el('input', { type: 'checkbox', checked: sources.has(a.steamId), disabled: a.steamId === receiver || busy, ariaLabel: `Send from ${accountLabel(a.name, a.nickname)}` });
-			box.addEventListener('change', () => { if (box.checked) sources.add(a.steamId); else sources.delete(a.steamId); invalidate(); drawTarget(); drawList(); });
-			return el('label', { class: `bulk-acc${a.steamId === receiver ? ' off' : ''}` }, box, el('span', { textContent: accountLabel(a.name, a.nickname) }), ...(a.steamId === receiver ? [el('small', { class: 'hint', textContent: 'receives' })] : []));
-		}));
+			box.addEventListener('change', () => { if (box.checked) sources.add(a.steamId); else sources.delete(a.steamId); invalidate(); drawList(); });
+			return el('label', { class: `bulk-acc${a.steamId === receiver ? ' off' : ''}`, title: a.note || '' }, box, el('span', { textContent: accountLabel(a.name, a.nickname) }), ...(a.steamId === receiver ? [el('small', { class: 'hint', textContent: 'receives' })] : []));
+		}) : [el('p', { class: 'hint', textContent: 'No account matches.' })]));
 	}
 	function invalidate(): void {
 		if (busy) return;
@@ -2536,14 +2566,15 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 		return undefined;
 	}
 	gameSel.addEventListener('change', () => { game = gameSel.value; invalidate(); });
-	targetSel.addEventListener('change', () => { linkInput.hidden = targetSel.value !== 'paste'; invalidate(); drawList(); });
+	targetSel.addEventListener('change', () => { linkInput.hidden = targetSel.value !== 'paste'; if (targetSel.value.startsWith('a:')) sources.delete(targetSel.value.slice(2)); invalidate(); drawList(); });
 	linkInput.addEventListener('input', invalidate);
 
-	const rowsOf = (): [string, { assets: string[]; locked: number; error: string }][] => [...(preview ?? new Map()).entries()];
+	const rowsOf = (): [string, { assets: string[]; locked: number; error: string }][] => [...(preview ?? new Map<string, { assets: string[]; locked: number; error: string }>()).entries()].sort((x, y) => y[1].assets.length - x[1].assets.length);
 	function drawTable(state?: Map<string, string>): void {
 		const rows = rowsOf();
 		const total = rows.reduce((n, [, p]) => n + p.assets.length, 0);
 		const offers = rows.reduce((n, [, p]) => n + Math.ceil(p.assets.length / OFFER_SIZE), 0);
+		const empty = rows.filter(([, p]) => !p.error && p.assets.length === 0).length;
 		table.replaceChildren(
 			el('div', { class: 'bulk-row head' }, el('span', { textContent: 'Account' }), el('span', { textContent: 'Items' }), el('span', { textContent: 'Offers' }), el('span', { textContent: state ? 'Status' : 'Not tradable yet' })),
 			...rows.map(([id, p]) => el('div', { class: 'bulk-row' },
@@ -2551,7 +2582,7 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 				el('span', { textContent: p.error ? '–' : String(p.assets.length) }),
 				el('span', { textContent: p.error ? '–' : String(Math.ceil(p.assets.length / OFFER_SIZE)) }),
 				el('span', { class: p.error ? 'error' : 'hint', textContent: p.error || (state ? state.get(id) ?? 'waiting' : p.locked ? String(p.locked) : '') }))),
-			el('div', { class: 'bulk-row foot' }, el('strong', { textContent: 'Total' }), el('strong', { textContent: String(total) }), el('strong', { textContent: String(offers) }), el('span'))
+			el('div', { class: 'bulk-row foot' }, el('strong', { textContent: 'Total' }), el('strong', { textContent: String(total) }), el('strong', { textContent: String(offers) }), el('span', { class: 'hint', textContent: empty ? `${empty} account${empty === 1 ? ' has' : 's have'} nothing to send and ${empty === 1 ? 'is' : 'are'} skipped` : '' }))
 		);
 	}
 
@@ -2655,8 +2686,9 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 		tradesHeader(),
 		el('main', { class: 'send' },
 			el('p', { class: 'hint', textContent: 'Tick the accounts to send from, choose the game and who receives. Every tradeable item of that game is sent. You see the full list before anything leaves.' }),
+			listBar,
 			list,
-			el('div', { class: 'send-bar' }, gameSel, targetSel, previewBtn),
+			el('div', { class: 'send-bar' }, field('Game', gameSel), field('Receiver', targetSel), previewBtn),
 			linkInput,
 			status,
 			table,
