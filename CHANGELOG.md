@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.1
+- Trades, check: "Check account" now only looks at the sign-in and at bans. The unreliable trade-link lookup and the market, limit and authenticator-age checks are gone, so it no longer shows warnings that Steam cannot confirm.
+- Trades, send: the controls are one tidy panel (selected count, Send to, trade link, Save as, Review). Saved links can be removed from the same row.
+- Trades: error messages now name the step that failed (reading the inventory, the trade link, sending the offer) instead of a general "sign in again".
+- Trades: reading your own trade link follows Steam's redirect to your custom profile address.
+- Trades: item pictures try several Steam image servers, so they show up again.
+- Profile pictures: Steam's default picture no longer replaces a real picture that was already saved.
+
 ## 0.9.0
 - New compact design: smaller rows, avatars and codes so more fits on screen, and a side menu that collapses to icons. Two small icons at the bottom of the menu collapse/expand it and switch the theme (system, light, dark).
 - New compact list view: one thin line per account, about 36 px instead of 56, still showing the login name and SteamID64 when those settings are on.
