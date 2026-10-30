@@ -139,7 +139,7 @@ declare const api: {
 	apiKeyTest(): P<'ok' | 'invalid' | 'network'>;
 	apiKeyRemove(): P<{ has: boolean; locked: boolean; hint: string }>;
 	apiKeyPage(): P<void>;
-	tradeInventory(id: string, game: string): P<{ items: TradeItem[]; untradable: number; cut: boolean }>;
+	tradeInventory(id: string, game: string): P<{ items: TradeItem[]; untradable: number; locked: { name: string; icon: string; color: string; count: number; until: number | null }[]; cut: boolean }>;
 	tradeLinks(): P<{ name: string; link: string }[]>;
 	tradeLinkSave(name: string, link: string): P<{ name: string; link: string }[]>;
 	tradeLinkRemove(link: string): P<{ name: string; link: string }[]>;
@@ -2243,11 +2243,13 @@ async function sendScreen(id: string): Promise<void> {
 	let savedLinks = links.ok ? links.value : [];
 	let game = 'cs2';
 	let items: TradeItem[] = [];
+	let locked: { name: string; icon: string; color: string; count: number; until: number | null }[] = [];
 	const picked = new Set<string>();
 	let filter = '';
 	let busy = false;
 
 	const grid = el('div', { class: 'items' });
+	const lockedBox = el('div', { class: 'locked-box', hidden: true });
 	const info = el('p', { class: 'hint', textContent: '' });
 	const count = el('strong', { textContent: '0 selected' });
 	const gameSel = el('select', { ariaLabel: 'Game' });
@@ -2328,6 +2330,26 @@ async function sendScreen(id: string): Promise<void> {
 		drawSummary();
 	}
 
+	const when = (until: number | null): string =>
+		until === null ? 'Not tradable' : `Tradable ${new Date(until * 1000).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`;
+	function drawLocked(): void {
+		lockedBox.hidden = locked.length === 0;
+		if (!locked.length) return;
+		const total = locked.reduce((n, l) => n + l.count, 0);
+		lockedBox.replaceChildren(
+			el('h2', { textContent: `Not tradable right now (${total})` }),
+			el('div', { class: 'items' }, ...locked.map((l) => {
+				const nameEl = el('span', { class: 'iname', textContent: l.name });
+				if (l.color) nameEl.style.color = `#${l.color}`;
+				const tile = el('div', { class: 'item locked', title: `${l.name}: ${when(l.until)}` },
+					l.icon ? el('img', { src: itemImage(l.icon), alt: '', loading: 'lazy' }) : el('span', { class: 'noimg', textContent: '?' }),
+					nameEl,
+					el('span', { class: 'until', textContent: when(l.until) }));
+				if (l.count > 1) tile.append(el('span', { class: 'qty', textContent: `×${l.count}` }));
+				return tile;
+			})));
+	}
+
 	const confirmBox = el('div', { class: 'send-confirm', hidden: true });
 	const result = el('div', { class: 'send-result' });
 	const sendBtn = el('button', { class: 'primary', type: 'button', textContent: 'Review…' });
@@ -2364,9 +2386,11 @@ async function sendScreen(id: string): Promise<void> {
 			return drawSummary();
 		}
 		items = r.value.items;
+		locked = r.value.locked;
+		drawLocked();
 		info.textContent = [
 			`${items.length} tradeable item${items.length === 1 ? '' : 's'}.`,
-			r.value.untradable ? `${r.value.untradable} more cannot be traded right now (trade hold, not tradeable) and are not listed.` : '',
+			r.value.untradable ? `${r.value.untradable} more cannot be traded right now, see below.` : '',
 			r.value.cut ? 'The inventory is very large; only the first part is shown.' : ''
 		].filter(Boolean).join(' ');
 		drawGrid();
@@ -2377,8 +2401,8 @@ async function sendScreen(id: string): Promise<void> {
 	sendBtn.addEventListener('click', () => {
 		const n = chosen().length;
 		const offers = Math.ceil(n / OFFER_SIZE);
-		const word = el('input', { type: 'text', class: 'search', placeholder: 'Type SEND', ariaLabel: 'Type SEND to confirm', autocomplete: 'off', spellcheck: false });
-		const go = el('button', { class: 'primary', type: 'button', textContent: 'Send now', disabled: true });
+		const word = el('input', { type: 'text', class: 'search word', placeholder: 'Type SEND', ariaLabel: 'Type SEND to confirm', autocomplete: 'off', spellcheck: false });
+		const go = el('button', { class: 'small primary', type: 'button', textContent: 'Send now', disabled: true });
 		word.addEventListener('input', () => { go.disabled = word.value.trim() !== 'SEND'; });
 		go.addEventListener('click', async () => {
 			const target = targetParam();
@@ -2406,7 +2430,7 @@ async function sendScreen(id: string): Promise<void> {
 		confirmBox.replaceChildren(
 			el('p', { textContent: `Send ${n} item${n === 1 ? '' : 's'} from ${accountLabel(me.name, me.nickname)} to ${targetName()}?` }),
 			el('p', { class: 'hint', textContent: `${offers} trade offer${offers === 1 ? '' : 's'} (up to ${OFFER_SIZE} items each), each confirmed on this account. Trades cannot be undone once the other side accepts.` }),
-			el('div', { class: 'row-actions left' }, word, go, el('button', { class: 'small', type: 'button', textContent: 'Cancel', onclick: () => { confirmBox.hidden = true; } })));
+			el('div', { class: 'confirm-actions' }, word, go, el('button', { class: 'small', type: 'button', textContent: 'Cancel', onclick: () => { confirmBox.hidden = true; } })));
 		word.focus();
 	});
 
@@ -2417,6 +2441,7 @@ async function sendScreen(id: string): Promise<void> {
 			el('div', { class: 'send-bar' }, gameSel, search, el('button', { class: 'small', type: 'button', textContent: 'Select all shown', onclick: () => { for (const [, g] of visible()) for (const i of g) picked.add(i.assetId); drawGrid(); } }), el('button', { class: 'small', type: 'button', textContent: 'None', onclick: () => { picked.clear(); drawGrid(); } })),
 			info,
 			grid,
+			lockedBox,
 			el('div', { class: 'send-to' }, el('div', { class: 'send-count' }, count), targetSel, sendBtn),
 			linkBox,
 			confirmBox,

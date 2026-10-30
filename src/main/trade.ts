@@ -62,10 +62,19 @@ export interface Item {
 	color: string;
 	amount: number;
 }
+/** Items that exist but cannot be traded right now, grouped. `until` is Unix seconds when Steam names a date. */
+export interface Locked {
+	name: string;
+	icon: string;
+	color: string;
+	count: number;
+	until: number | null;
+}
 export interface Inventory {
 	items: Item[];
-	/** Items that exist but cannot be traded right now. */
+	/** How many items cannot be traded right now. */
 	untradable: number;
+	locked: Locked[];
 }
 export interface InventoryRead extends Inventory {
 	/** True when the inventory was longer than what was read. */
@@ -102,10 +111,26 @@ function checkStatus(status: number): void {
 
 const word = (v: unknown, max = 200): string => (typeof v === 'string' ? v.slice(0, max) : '');
 
+/** When a trade-protected item becomes tradable: Steam's expiry stamp, or the "Tradable After …" line it shows. */
+export function unlockTime(d: Record<string, unknown>): number | null {
+	const stamp = typeof d['cache_expiration'] === 'string' ? Date.parse(d['cache_expiration']) : NaN;
+	if (Number.isFinite(stamp)) return Math.floor(stamp / 1000);
+	for (const o of Array.isArray(d['owner_descriptions']) ? d['owner_descriptions'] : []) {
+		const v = (o as Record<string, unknown>)['value'];
+		const m = typeof v === 'string' ? /After (\w{3}) (\d{1,2}), (\d{4}) \((\d{1,2}):(\d{2}):(\d{2})\) GMT/.exec(v) : null;
+		if (m) {
+			const at = Date.parse(`${m[1]} ${m[2]} ${m[3]} ${m[4]}:${m[5]}:${m[6]} GMT`);
+			if (Number.isFinite(at)) return Math.floor(at / 1000);
+		}
+	}
+	return null;
+}
+
 /** One page of an inventory reply, reduced to what the screen needs. */
 export function parseInventory(pages: unknown[]): Inventory {
 	const items: Item[] = [];
 	let untradable = 0;
+	const locked = new Map<string, Locked>();
 	for (const body of pages) {
 		const b = (body ?? {}) as Record<string, unknown>;
 		const assets = Array.isArray(b['assets']) ? b['assets'] : [];
@@ -120,6 +145,13 @@ export function parseInventory(pages: unknown[]): Inventory {
 			if (!d) continue;
 			if (d['tradable'] !== 1) {
 				untradable++;
+				const until = unlockTime(d);
+				const key = `${String(o['classid'])}_${String(o['instanceid'])}_${until ?? ''}`;
+				const icon = word(d['icon_url'], 400);
+				const color = word(d['name_color'], 6);
+				const seen = locked.get(key);
+				if (seen) seen.count++;
+				else if (locked.size < 500) locked.set(key, { name: word(d['market_name'] ?? d['name']) || word(d['name']), icon: /^[\w-]+$/.test(icon) ? icon : '', color: /^[0-9a-fA-F]{6}$/.test(color) ? color : '', count: 1, until });
 				continue;
 			}
 			const assetId = String(o['assetid'] ?? '');
@@ -138,7 +170,7 @@ export function parseInventory(pages: unknown[]): Inventory {
 			});
 		}
 	}
-	return { items, untradable };
+	return { items, untradable, locked: [...locked.values()].sort((a, b) => (a.until ?? Infinity) - (b.until ?? Infinity)) };
 }
 
 export async function fetchInventory(http: Http, steamId: string, game: Game, cookie: string): Promise<InventoryRead> {
@@ -148,7 +180,7 @@ export async function fetchInventory(http: Http, steamId: string, game: Game, co
 	for (let i = 0; i < MAX_PAGES; i++) {
 		const url = `https://steamcommunity.com/inventory/${steamId}/${game.appId}/${game.contextId}?l=english&count=2000${start ? `&start_assetid=${start}` : ''}`;
 		const res = await http({ method: 'GET', url, headers: { 'User-Agent': BROWSER, Cookie: cookie } });
-		if (res.status === 500 || res.status === 404) return { items: [], untradable: 0, cut: false };
+		if (res.status === 500 || res.status === 404) return { items: [], untradable: 0, locked: [], cut: false };
 		checkStatus(res.status);
 		let body: Record<string, unknown>;
 		try {

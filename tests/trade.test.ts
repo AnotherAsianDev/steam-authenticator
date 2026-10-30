@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GAMES, accountIdOf, chunk, fetchInventory, fetchOwnTradeLink, parseInventory, parseTradeLink, sendOffer, type Http, type Item } from '../src/main/trade';
+import { GAMES, accountIdOf, chunk, fetchInventory, fetchOwnTradeLink, parseInventory, parseTradeLink, unlockTime, sendOffer, type Http, type Item } from '../src/main/trade';
 
 const LINK = 'https://steamcommunity.com/tradeoffer/new/?partner=1039734271&token=AbCd_-12';
 const item = (n: number): Item => ({ assetId: String(n), group: 'g', name: 'Case', type: 'Container', icon: 'x', color: '', amount: 1 });
@@ -54,6 +54,23 @@ describe('inventory', () => {
 	});
 	it('maps a dead session to a clear message', async () => {
 		await expect(fetchInventory(async () => ({ status: 302, text: '' }), '76561199000000001', GAMES[0]!, 'c')).rejects.toThrow(/sign in/i);
+	});
+});
+
+describe('locked items', () => {
+	it('reads the unlock time from the expiry stamp or the shown line', () => {
+		expect(unlockTime({ cache_expiration: '2026-11-06T07:00:00Z' })).toBe(Date.parse('2026-11-06T07:00:00Z') / 1000);
+		expect(unlockTime({ owner_descriptions: [{ value: 'Tradable After Nov 6, 2026 (7:00:00) GMT' }] })).toBe(Date.parse('2026-11-06T07:00:00Z') / 1000);
+		expect(unlockTime({})).toBeNull();
+	});
+	it('lists locked items grouped, soonest first', () => {
+		const d = (c: string, extra: object) => ({ classid: c, instanceid: '0', market_name: c, tradable: 0, ...extra });
+		const inv = parseInventory([{
+			assets: [1, 2, 3, 4].map((n) => ({ assetid: String(n), classid: n < 3 ? 'late' : 'soon', instanceid: '0' })),
+			descriptions: [d('late', { cache_expiration: '2026-12-01T00:00:00Z' }), d('soon', { cache_expiration: '2026-11-01T00:00:00Z' })]
+		}]);
+		expect(inv.items).toHaveLength(0);
+		expect(inv.locked.map((l) => [l.name, l.count])).toEqual([['soon', 2], ['late', 2]]);
 	});
 });
 
