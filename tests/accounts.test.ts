@@ -338,3 +338,17 @@ describe('restarts do not repeat requests', () => {
 		expect(accounts.sessionDaysLeft(ID)).toBeUndefined();
 	});
 });
+
+import { parseMaFile } from '../src/main/mafile';
+describe('authenticator age', () => {
+	const base = { shared_secret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAA=', identity_secret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAA=', account_name: 'x', Session: { SteamID: 76561199000000001 } };
+	it('reads server_time when it is plausible', () => {
+		expect(parseMaFile(JSON.stringify({ ...base, server_time: '1700000000' })).serverTime).toBe(1700000000);
+		expect(parseMaFile(JSON.stringify({ ...base, server_time: 1700000000 })).serverTime).toBe(1700000000);
+	});
+	it('ignores empty or nonsense values', () => {
+		expect(parseMaFile(JSON.stringify({ ...base, server_time: '' })).serverTime).toBeUndefined();
+		expect(parseMaFile(JSON.stringify({ ...base, server_time: 12 })).serverTime).toBeUndefined();
+		expect(parseMaFile(JSON.stringify(base)).serverTime).toBeUndefined();
+	});
+});

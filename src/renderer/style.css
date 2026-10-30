@@ -584,3 +584,8 @@ button:active:not(:disabled) { transform: scale(.97); }
 .bulk-acc .skip.on { color: var(--warn); }
 .bulk-acc.skipped > span { color: var(--muted); }
 .bulk-acc small + .skip { margin-left: 6px; }
+
+.warnline { color: var(--warn); margin: 0 0 8px; }
+.bulk-acc .restricted { color: var(--warn); font-weight: 700; font-size: 12px; margin-left: auto; }
+.bulk-acc .restricted + .skip { margin-left: 4px; }
+.bulk-acc small + .restricted { margin-left: 6px; }

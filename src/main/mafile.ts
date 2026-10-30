@@ -9,6 +9,8 @@ export interface ParsedMaFile {
 	revocationCode?: string;
 	/** From the maFile's own Session block, when it has one. */
 	refreshToken?: string;
+	/** Unix seconds when the authenticator was added, when the file says. */
+	serverTime?: number;
 	/** The original text, stored verbatim so export stays lossless. */
 	raw: string;
 }
@@ -59,11 +61,14 @@ export function parseMaFile(text: string, hintSteamId?: string): ParsedMaFile {
 			? (session as Record<string, unknown>)['RefreshToken']
 			: undefined;
 	const revocation = json['revocation_code'];
+	const st = Number(json['server_time']);
+	const serverTime = Number.isInteger(st) && st > 1_200_000_000 && st < 4_000_000_000 ? st : undefined;
 
 	return {
 		steamId,
 		...(typeof revocation === 'string' && revocation ? { revocationCode: revocation } : {}),
 		...(typeof refreshToken === 'string' && refreshToken ? { refreshToken } : {}),
+		...(serverTime ? { serverTime } : {}),
 		accountName: typeof accountName === 'string' && accountName ? accountName : steamId,
 		sharedSecret,
 		identitySecret,

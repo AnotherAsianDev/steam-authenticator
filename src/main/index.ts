@@ -123,6 +123,15 @@ function str(v: unknown, what = 'value'): string {
 	if (typeof v !== 'string' || v.length === 0 || v.length > 4096) throw new UserError(`Invalid ${what}`);
 	return v;
 }
+/** Why Steam may refuse trades or the market for this account, as far as the profile page and the maFile tell. */
+const NEW_AUTHENTICATOR_DAYS = 7;
+function restrictions(steamId: string): string[] {
+	const out: string[] = [];
+	if (avatars.limited(steamId)) out.push('Limited account (under $5 spent): Steam blocks the market and restricts trading and more until $5 has been spent');
+	const age = accounts.authenticatorDays(steamId);
+	if (age !== undefined && age < NEW_AUTHENTICATOR_DAYS) out.push(`The authenticator was added ${age === 0 ? 'today' : `${age} day${age === 1 ? '' : 's'} ago`}: Steam can hold trades and market listings for a new authenticator`);
+	return out;
+}
 function known(steamId: unknown): string {
 	const id = str(steamId, 'account');
 	if (!accounts.get(id)) throw new UserError('Unknown account');
@@ -303,6 +312,7 @@ function registerIpc(): void {
 				bans: watchBans ? banLabels(avatars.bans(steamId)) : [],
 				tags: meta.get(steamId).tags,
 				skipBulk: meta.get(steamId).skipBulk,
+				restrictions: restrictions(steamId),
 				sessionDays: accounts.sessionDaysLeft(steamId) ?? null,
 				hasPassword: accounts.hasPassword(steamId),
 				state: st.state,
@@ -336,7 +346,7 @@ function registerIpc(): void {
 	});
 	handle('detail', (steamId: unknown) => {
 		const a = accounts.get(known(steamId))!;
-		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note, tags: meta.get(a.steamId).tags, bans: banLabels(avatars.bans(a.steamId)), banNote: banNote(avatars.bans(a.steamId)), banHistory: avatars.history(a.steamId), sessionDays: accounts.sessionDaysLeft(a.steamId) ?? null };
+		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note, tags: meta.get(a.steamId).tags, bans: banLabels(avatars.bans(a.steamId)), banNote: banNote(avatars.bans(a.steamId)), banHistory: avatars.history(a.steamId), restrictions: restrictions(a.steamId), sessionDays: accounts.sessionDaysLeft(a.steamId) ?? null };
 	});
 	handle('apiKeyState', () => apiKeyState());
 	handle('apiKeySet', async (key: unknown) => {

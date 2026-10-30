@@ -88,3 +88,12 @@ describe('bans', () => {
 		expect(cache.history(ID).map((e) => e.what)).toEqual(['New: VAC ban', 'Bans lifted']);
 	});
 });
+
+import { extractLimited } from '../src/main/avatar';
+describe('limited accounts', () => {
+	it('reads the limited flag from the profile page', () => {
+		expect(extractLimited('<isLimitedAccount>1</isLimitedAccount>')).toBe(true);
+		expect(extractLimited('<isLimitedAccount> 0 </isLimitedAccount>')).toBe(false);
+		expect(extractLimited('<profile></profile>')).toBeUndefined();
+	});
+});
