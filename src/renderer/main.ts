@@ -2330,7 +2330,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 	const targetSel = el('select', { ariaLabel: 'Send to' });
 	const linkInput = el('input', { type: 'text', class: 'search', placeholder: 'https://steamcommunity.com/tradeoffer/new/?partner=…&token=…', ariaLabel: 'Trade link', spellcheck: false });
 	const linkName = el('input', { type: 'text', class: 'search', placeholder: 'Name to save it under', ariaLabel: 'Name for the trade link', maxLength: 30, spellcheck: false });
-	const linkBox = el('div', { class: 'link-box' }, linkInput, el('div', { class: 'link-save' }, linkName,
+	const linkBox = el('div', { class: 'link-box' }, field('Trade link', linkInput), el('div', { class: 'link-save' }, field('Save as (optional)', linkName),
 		el('button', { class: 'small', type: 'button', textContent: 'Save link', onclick: async () => {
 			const r = await api.tradeLinkSave(linkName.value, linkInput.value);
 			if (!r.ok) return toast(r.error, true);
@@ -2338,16 +2338,15 @@ async function tradesScreen(wanted?: string): Promise<void> {
 			drawTargets(`l:${linkInput.value.trim()}`);
 			toast('Trade link saved');
 		} })));
-	const savedBox = el('div', { class: 'link-box' }, el('div', { class: 'link-save' }, el('span', { class: 'hint', textContent: 'Saved trade link' }),
-		el('button', { class: 'small danger', type: 'button', textContent: 'Remove', onclick: async () => {
-			const cur = targetSel.value;
-			if (!cur.startsWith('l:')) return;
-			const r = await api.tradeLinkRemove(cur.slice(2));
-			if (!r.ok) return toast(r.error, true);
-			savedLinks = r.value;
-			drawTargets();
-		} })));
-	const showLinkBoxes = (): void => { linkBox.hidden = targetSel.value !== 'paste'; savedBox.hidden = !targetSel.value.startsWith('l:'); };
+	const removeBtn = el('button', { class: 'small danger', type: 'button', textContent: 'Remove', title: 'Remove this saved trade link', onclick: async () => {
+		const cur = targetSel.value;
+		if (!cur.startsWith('l:')) return;
+		const r = await api.tradeLinkRemove(cur.slice(2));
+		if (!r.ok) return toast(r.error, true);
+		savedLinks = r.value;
+		drawTargets();
+	} });
+	const showLinkBoxes = (): void => { linkBox.hidden = targetSel.value !== 'paste'; removeBtn.hidden = !targetSel.value.startsWith('l:'); };
 	function drawTargets(select = ''): void {
 		const group = (label: string, opts: HTMLOptionElement[]): HTMLElement[] => {
 			if (!opts.length) return [];
@@ -2527,16 +2526,17 @@ async function tradesScreen(wanted?: string): Promise<void> {
 			info,
 			grid,
 			lockedBox,
-			el('div', { class: 'send-to' }, el('div', { class: 'send-count' }, count), field('Send to', targetSel), sendBtn),
-			linkBox,
-			savedBox,
+			el('section', { class: 'send-panel' },
+				el('div', { class: 'send-panel-head' }, count),
+				field('Send to', el('div', { class: 'target-row' }, targetSel, removeBtn)),
+				linkBox,
+				el('div', { class: 'send-panel-foot' }, sendBtn)),
 			confirmBox,
 			result)
 	);
 	void load();
 }
 
-/** What may stop an account from trading, for the Trades tab. */
 /** One answer instead of a list: can it trade, and if not or not sure, why. */
 const verdict = (lines: { level: 'ok' | 'warn' | 'bad'; text: string }[]): HTMLElement[] => {
 	const bad = lines.filter((l) => l.level === 'bad');
@@ -2545,7 +2545,7 @@ const verdict = (lines: { level: 'ok' | 'warn' | 'bad'; text: string }[]): HTMLE
 	return [
 		el('div', { class: `health ${head[0]}` }, el('strong', { textContent: head[1] })),
 		...[...bad, ...warn].map((l) => el('div', { class: `health ${l.level}` }, el('span', { class: 'hint', textContent: l.text }))),
-		el('p', { class: 'hint fine', textContent: 'Based on the sign-in, the public profile and the ban check. Steam has the final say.' })
+		el('p', { class: 'hint fine', textContent: 'Based on the sign-in and the ban check. Steam has the final say.' })
 	];
 };
 const tradeNotes = (a: Row): string[] => [...a.bans.filter((b) => b.startsWith('Trade')).map((b) => `${b}: Steam blocks or limits trading`)];

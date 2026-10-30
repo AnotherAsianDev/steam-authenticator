@@ -543,10 +543,16 @@ button:active:not(:disabled) { transform: scale(.97); }
 .send-count { min-width: 90px; font-size: 13px; }
 .link-box { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .link-box[hidden], .send-confirm[hidden] { display: none; }
-.link-save { display: flex; align-items: center; gap: 8px; }
-.link-save input { flex: 1; min-width: 0; width: auto; }
-.link-save .hint { flex: 1; margin: 0; }
+.link-save { display: flex; align-items: flex-end; gap: 8px; }
+.link-save .labelled { flex: 1; min-width: 0; }
 .link-save button { flex: none; }
+.send-panel { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.send-panel .link-box { margin: 0; gap: 12px; }
+.send-panel-head { font-size: 13px; }
+.send-panel-foot { display: flex; justify-content: flex-end; }
+.target-row { display: flex; gap: 8px; }
+.target-row select { flex: 1; min-width: 0; }
+.target-row button[hidden] { display: none; }
 .send-confirm { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--line)); border-radius: 12px; animation: rise .2s ease-out; }
 .send-confirm p { margin: 0; }
 .confirm-actions { display: flex; align-items: center; gap: 8px; }

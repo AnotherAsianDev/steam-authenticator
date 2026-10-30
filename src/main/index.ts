@@ -494,27 +494,18 @@ function registerIpc(): void {
 		await cancelOffer(fetchHttp, await accounts.webToken(id), str(offerId, 'offer'));
 		log.info('trade', `${accounts.get(id)!.accountName}: cancelled offer ${String(offerId)}`);
 	});
-	/** Can this account trade right now? Live checks (sign-in, trade link) first, then what is already known. */
+	/** Can this account trade right now? The sign-in is tried live; bans are what the public profile said at its last read. */
 	handle('tradeCheck', async (steamId: unknown) => {
 		const id = known(steamId);
 		const lines: { level: 'ok' | 'warn' | 'bad'; text: string }[] = [];
-		let cookie: string | undefined;
 		try {
-			cookie = await cookieOf(id);
+			await cookieOf(id);
 			lines.push({ level: 'ok', text: 'Signed in, Steam accepts the session' });
 		} catch (err) {
 			lines.push({ level: 'bad', text: err instanceof UserError ? err.message : 'Could not reach Steam' });
 		}
-		if (cookie) {
-			try {
-				const link = await fetchOwnTradeLink(fetchHttp, id, cookie);
-				lines.push(link ? { level: 'ok', text: 'Has a trade link, so it can receive items' } : { level: 'warn', text: 'No trade link found on its trade offer privacy page, so it cannot receive from your other accounts until it has one' });
-			} catch (err) {
-				lines.push({ level: 'warn', text: err instanceof UserError ? err.message : 'Could not read its trade link' });
-			}
-		}
 		for (const b of banLabels(avatars.bans(id))) lines.push({ level: b.startsWith('Trade') ? 'bad' : 'warn', text: b.startsWith('Trade') ? `${b}: Steam blocks or limits trading` : b });
-		if (!lines.some((l) => l.level !== 'ok')) lines.push({ level: 'ok', text: 'No ban, limit or new authenticator known' });
+		if (!lines.some((l) => l.level !== 'ok')) lines.push({ level: 'ok', text: 'No ban known' });
 		return lines;
 	});
 	handle('tradeLinks', () => settings.get().tradeLinks);
