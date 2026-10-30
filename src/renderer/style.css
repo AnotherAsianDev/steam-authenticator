@@ -599,3 +599,15 @@ select { padding-right: 8px; }
 .tab { height: calc(var(--ctl) - 8px); padding: 0 12px; font-size: 13px; display: inline-flex; align-items: center; }
 .filterbar select.sort { width: auto; color: var(--muted); }
 .bulk-acc, .item-list-row { min-height: 30px; }
+
+/* ----------------------------------------------- offers, overview, checks -- */
+.bulk-row.clickable { cursor: pointer; transition: background-color .12s; }
+.bulk-row.clickable:hover { background: var(--raised); }
+.bulk-row .cancel-cell { display: flex; justify-content: flex-end; gap: 6px; }
+.bulk-row .small { height: 28px; padding: 0 10px; font-size: 12px; }
+.check-box { display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px; }
+.check-box:empty { display: none; }
+.check-box .health { padding: 1px 0; border: 0; background: none; }
+.check-box .health.warn .hint { color: var(--warn); }
+.check-box .health.bad .hint { color: var(--danger); }
+.bulk-row.head .acct { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600; color: var(--text); }

@@ -265,3 +265,49 @@ export async function sendOffer(http: Http, cookieBase: string, to: TradeLink, g
 	if (!/^\d+$/.test(offerId)) throw new UserError('Steam did not confirm the offer. Check the Trade offers page before trying again');
 	return { offerId, needsMobile: reply['needs_mobile_confirmation'] === true, needsEmail: reply['needs_email_confirmation'] === true };
 }
+
+export interface OpenOffer {
+	id: string;
+	/** Waiting for the other side, or still waiting for your confirmation. */
+	state: 'waiting' | 'confirm';
+	items: number;
+	/** The other account's number, as Steam names it. */
+	partner: string;
+	created: number;
+}
+
+/** Offers this account sent that are still open, from Steam's trade offer service. */
+export function parseOpenOffers(body: unknown): OpenOffer[] {
+	const list = ((body as { response?: { trade_offers_sent?: unknown } } | null)?.response?.trade_offers_sent ?? []) as Record<string, unknown>[];
+	const out: OpenOffer[] = [];
+	for (const o of Array.isArray(list) ? list : []) {
+		const state = Number(o['trade_offer_state']);
+		const id = String(o['tradeofferid'] ?? '');
+		if ((state !== 2 && state !== 9) || !/^\d+$/.test(id)) continue;
+		const give = Array.isArray(o['items_to_give']) ? o['items_to_give'].length : 0;
+		out.push({ id, state: state === 9 ? 'confirm' : 'waiting', items: give, partner: String(o['accountid_other'] ?? ''), created: Number(o['time_created']) || 0 });
+	}
+	return out.sort((a, b) => b.created - a.created);
+}
+
+export async function fetchOpenOffers(http: Http, accessToken: string): Promise<OpenOffer[]> {
+	const url = `https://api.steampowered.com/IEconService/GetTradeOffers/v1/?${new URLSearchParams({ access_token: accessToken, get_sent_offers: '1', get_received_offers: '0', active_only: '1', get_descriptions: '0' })}`;
+	const res = await http({ method: 'GET', url, headers: { 'User-Agent': BROWSER } });
+	checkStatus(res.status);
+	try {
+		return parseOpenOffers(JSON.parse(res.text));
+	} catch {
+		throw new UserError('Steam sent an answer that could not be read');
+	}
+}
+
+export async function cancelOffer(http: Http, accessToken: string, offerId: string): Promise<void> {
+	if (!/^\d+$/.test(offerId)) throw new UserError('Unknown offer');
+	const res = await http({
+		method: 'POST',
+		url: 'https://api.steampowered.com/IEconService/CancelTradeOffer/v1/',
+		headers: { 'User-Agent': BROWSER, 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+		body: new URLSearchParams({ access_token: accessToken, tradeofferid: offerId }).toString()
+	});
+	checkStatus(res.status);
+}

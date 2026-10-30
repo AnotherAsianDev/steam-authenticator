@@ -147,6 +147,11 @@ declare const api: {
 	tradeLinks(): P<{ name: string; link: string }[]>;
 	tradeLinkSave(name: string, link: string): P<{ name: string; link: string }[]>;
 	tradeLinkRemove(link: string): P<{ name: string; link: string }[]>;
+	tradeOffers(id: string): P<{ id: string; state: 'waiting' | 'confirm'; items: number; partner: string; created: number }[]>;
+	tradeCancel(id: string, offerId: string): P<void>;
+	tradeCheck(id: string): P<{ level: 'ok' | 'warn' | 'bad'; text: string }[]>;
+	backupSave(password: string): P<{ count: number; path: string } | null>;
+	backupRestore(password: string): P<{ added: number; kept: number } | null>;
 	tradeSend(id: string, game: string, assetIds: string[], target: { account?: string; link?: string }): P<{ offers: { offerId: string; items: number; confirmed: boolean; note: string }[]; planned: number; problem: string }>;
 	healthCheck(): P<{ skew: number; rows: { steamId: string; name: string; nickname: string | null; level: 'ok' | 'warn' | 'bad'; issues: string[] }[] }>;
 	confirmations(id: string): P<Status>;
@@ -2176,6 +2181,22 @@ async function settingsScreen(): Promise<void> {
 		...s.importFolders.map((f) => el('li', {}, el('span', { class: 'path', title: f, textContent: f }), el('button', { class: 'icon', title: 'Remove folder', ariaLabel: `Remove ${f}`, textContent: '✕', onclick: () => void set({ importFolders: s.importFolders.filter((x) => x !== f) }) })))
 	);
 
+	const backupPw = el('input', { type: 'password', class: 'search', placeholder: 'Backup password (8 or more characters)', ariaLabel: 'Backup password', autocomplete: 'off' });
+	const backupBox = el('div', { class: 'setting stack' },
+		el('span', { class: 'setting-label', textContent: 'Backup and restore' }),
+		el('span', { class: 'hint', textContent: 'One encrypted file with every maFile, saved password, note and tag. Keep the password: without it the file cannot be opened. Restoring only adds accounts that are missing here; accounts you already have are never changed.' }),
+		backupPw,
+		el('div', { class: 'row-actions left' },
+			el('button', { class: 'small', type: 'button', textContent: 'Save backup…', onclick: async () => {
+				const r = await api.backupSave(backupPw.value);
+				if (!r.ok) return toast(r.error, true);
+				if (r.value) toast(`Backup saved with ${r.value.count} account${r.value.count === 1 ? '' : 's'}`);
+			} }),
+			el('button', { class: 'small', type: 'button', textContent: 'Restore from backup…', onclick: async () => {
+				const r = await api.backupRestore(backupPw.value);
+				if (!r.ok) return toast(r.error, true);
+				if (r.value) toast(`${r.value.added} added, ${r.value.kept} already here`);
+			} })));
 	const tabDefs: [string, string][] = [['general', 'General'], ['bans', 'Bans'], ['confirmations', 'Confirmations'], ['security', 'Security'], ['import', 'Import and updates'], ['about', 'Health and about']];
 	const pages: Record<string, HTMLElement[]> = {
 		general: [
@@ -2198,6 +2219,7 @@ async function settingsScreen(): Promise<void> {
 			row('Clear after copying', 'Codes and secrets', select(s.clipboardClearSeconds, [[0, 'Never'], [15, '15 seconds'], [30, '30 seconds'], [60, '1 minute']], (v) => void set({ clipboardClearSeconds: v }), 'Clear clipboard')),
 		],
 		import: [
+			backupBox,
 			row('Check for updates', 'Asks GitHub each time the app starts if a newer release exists and tells you. Nothing is downloaded or installed', el('div', { class: 'row-actions left' },
 				el('button', { class: 'small', type: 'button', textContent: 'Check now', onclick: async () => { const found = await checkForUpdate(true); if (!found) toast('You have the latest version'); } }),
 				toggle(s.checkUpdates, (v) => void set({ checkUpdates: v }), 'Check for updates')),),
@@ -2246,11 +2268,11 @@ const OFFER_SIZE = 100;
 
 /** The Trades tab: pick tradeable items of one account and send them to another of your accounts or to a trade link. */
 let tradeSource = '';
-let tradeMode: 'one' | 'bulk' = 'one';
+let tradeMode: 'one' | 'bulk' | 'offers' | 'overview' = 'one';
 /** Changes whenever the Trades tab is opened, so a running bulk send stops when you leave. */
 let tradeRun = 0;
 const modeBar = (): HTMLElement =>
-	el('span', { class: 'seg-group text', role: 'group', ariaLabel: 'Mode' }, ...([['one', 'One account'], ['bulk', 'Several accounts']] as const).map(([m, label]) =>
+	el('span', { class: 'seg-group text', role: 'group', ariaLabel: 'Mode' }, ...([['one', 'One account'], ['bulk', 'Several accounts'], ['offers', 'Open offers'], ['overview', 'Overview']] as const).map(([m, label]) =>
 		el('button', { class: `seg${tradeMode === m ? ' on' : ''}`, type: 'button', textContent: label, onclick: () => { tradeMode = m; void navigate({ name: 'trades' }); } })));
 const tradesHeader = (): HTMLElement => el('header', {}, el('h1', { class: 'title', textContent: 'Trades' }), modeBar());
 
@@ -2260,6 +2282,8 @@ async function tradesScreen(wanted?: string): Promise<void> {
 	if (!acc.ok) return void toast(acc.error, true);
 	if (!acc.value.length) return void show(tradesHeader(), el('main', {}, el('p', { class: 'hint', textContent: 'Add an account first.' })));
 	if (tradeMode === 'bulk') return bulkScreen(acc.value, links.ok ? links.value : []);
+	if (tradeMode === 'offers') return offersScreen(acc.value);
+	if (tradeMode === 'overview') return overviewScreen(acc.value);
 	const id = [wanted, tradeSource].find((x) => x && acc.value.some((a) => a.steamId === x)) ?? acc.value[0]!.steamId;
 	tradeSource = id;
 	const me = acc.value.find((a) => a.steamId === id)!;
@@ -2274,6 +2298,8 @@ async function tradesScreen(wanted?: string): Promise<void> {
 
 	const fromSel = el('select', { ariaLabel: 'Send from' }, ...acc.value.map((a) => el('option', { value: a.steamId, textContent: accountLabel(a.name, a.nickname), selected: a.steamId === id })));
 	fromSel.addEventListener('change', () => { if (!busy) void navigate({ name: 'trades', id: fromSel.value }); else fromSel.value = id; });
+	const checkBox = el('div', { class: 'check-box' });
+	const alive = (): boolean => view.name === 'trades' && tradeMode === 'one';
 	const grid = el('div', { class: 'tiles' });
 	const lockedBox = el('div', { class: 'locked-box', hidden: true });
 	const info = el('p', { class: 'hint', textContent: '' });
@@ -2464,7 +2490,17 @@ async function tradesScreen(wanted?: string): Promise<void> {
 	show(
 		tradesHeader(),
 		el('main', { class: 'send' },
-			el('div', { class: 'send-from' }, el('span', { textContent: 'Send items from' }), fromSel),
+			el('div', { class: 'send-from' }, el('span', { textContent: 'Send items from' }), fromSel,
+				el('button', { class: 'small', type: 'button', textContent: 'Check account', onclick: async (e: Event) => {
+					const b = e.currentTarget as HTMLButtonElement;
+					b.disabled = true;
+					checkBox.replaceChildren(el('p', { class: 'hint', textContent: 'Checking…' }));
+					const r = await api.tradeCheck(id);
+					b.disabled = false;
+					if (!alive()) return;
+					checkBox.replaceChildren(...(r.ok ? r.value.map((l) => el('div', { class: `health ${l.level}` }, el('span', { class: 'hint', textContent: `${l.level === 'ok' ? '✓' : l.level === 'warn' ? '!' : '✕'} ${l.text}` }))) : [el('p', { class: 'hint error', textContent: r.error })]));
+				} })),
+			checkBox,
 			...(tradeNotes(me).length ? [el('p', { class: 'hint warnline', textContent: `This account may not be able to trade: ${tradeNotes(me).join('. ')}.` })] : []),
 			el('div', { class: 'send-bar' }, field('Game', gameSel), field('Filter', search), el('button', { class: 'small', type: 'button', textContent: 'Select all shown', onclick: () => { for (const [, g] of visible()) for (const i of g) picked.add(i.assetId); drawGrid(); } }), el('button', { class: 'small', type: 'button', textContent: 'None', onclick: () => { picked.clear(); drawGrid(); } })),
 			info,
@@ -2484,6 +2520,125 @@ const field = (label: string, control: HTMLElement): HTMLElement => el('label', 
 const sleep = (ms: number): Promise<void> => new Promise((done) => window.setTimeout(done, ms));
 /** Stop everything on these; carrying on would only make Steam stricter. */
 const isLimit = (message: string): boolean => /rate|too many|slow down|wait a few/i.test(message);
+
+/** Offers an account sent that are still open, with a way to take them back. */
+function offersScreen(all: Row[]): void {
+	const run = tradeRun;
+	const alive = (): boolean => run === tradeRun && view.name === 'trades';
+	let busy = false;
+	const sel = el('select', { ariaLabel: 'Account' }, el('option', { value: '', textContent: 'All accounts' }), ...all.map((a) => el('option', { value: a.steamId, textContent: accountLabel(a.name, a.nickname) })));
+	const status = el('p', { class: 'hint', textContent: 'Shows offers sent from an account that nobody has accepted yet, for example after a bulk send. Cancel them here instead of on Steam.' });
+	const out = el('div', { class: 'bulk-table' });
+	const go = el('button', { class: 'small primary', type: 'button', textContent: 'Check' });
+
+	function draw(a: Row, offers: { id: string; state: 'waiting' | 'confirm'; items: number; created: number }[]): void {
+		const cancel = async (ids: string[]): Promise<void> => {
+			for (const id of ids) {
+				const r = await api.tradeCancel(a.steamId, id);
+				if (!r.ok) return toast(r.error, true);
+				await sleep(800);
+			}
+			toast(`${ids.length} offer${ids.length === 1 ? '' : 's'} cancelled`);
+			void check();
+		};
+		out.append(
+			el('div', { class: 'bulk-row head' }, el('span', { class: 'acct', textContent: accountLabel(a.name, a.nickname) }), el('span', { textContent: 'Items' }), el('span', { textContent: 'Sent' }), el('span', { class: 'cancel-cell' },
+				confirmButton(`Cancel all ${offers.length}`, 'Click again to cancel all', 'small danger', () => void cancel(offers.map((o) => o.id))))),
+			...offers.map((o) => el('div', { class: 'bulk-row' }, el('span', { textContent: o.state === 'confirm' ? 'Waiting for your confirmation' : 'Waiting for the other side' }), el('span', { textContent: String(o.items) }), el('span', { textContent: ago(o.created) }),
+				el('span', { class: 'cancel-cell' }, confirmButton('Cancel', 'Click again to cancel', 'small danger', () => void cancel([o.id])))))
+		);
+	}
+
+	async function check(): Promise<void> {
+		if (busy) return;
+		busy = true;
+		go.disabled = true;
+		out.replaceChildren();
+		const list = sel.value ? all.filter((a) => a.steamId === sel.value) : all;
+		let found = 0;
+		for (const [n, a] of list.entries()) {
+			if (!alive()) return;
+			status.textContent = `Checking ${n + 1} of ${list.length}…`;
+			const r = await api.tradeOffers(a.steamId);
+			if (!r.ok) {
+				if (isLimit(r.error)) { status.textContent = `${r.error}. Stopped.`; break; }
+				if (list.length === 1) status.textContent = r.error;
+			} else if (r.value.length) {
+				found += r.value.length;
+				draw(a, r.value);
+			}
+			if (n < list.length - 1) await sleep(500);
+		}
+		busy = false;
+		go.disabled = false;
+		if (alive() && !status.textContent?.endsWith('Stopped.') && !(list.length === 1 && status.textContent && !status.textContent.startsWith('Checking'))) status.textContent = found ? `${found} open offer${found === 1 ? '' : 's'}.` : 'No open offers.';
+	}
+	go.addEventListener('click', () => void check());
+	show(tradesHeader(), el('main', { class: 'send' }, el('div', { class: 'send-from' }, el('span', { textContent: 'Account' }), sel, go), status, out));
+}
+
+/** What every account holds in one game, read one account at a time. */
+function overviewScreen(all: Row[]): void {
+	const run = tradeRun;
+	const alive = (): boolean => run === tradeRun && view.name === 'trades';
+	let game = 'cs2';
+	let busy = false;
+	let stop = false;
+	const gameSel = el('select', { ariaLabel: 'Game' }, ...GAME_CHOICES.map(([k, name]) => el('option', { value: k, textContent: name })));
+	gameSel.addEventListener('change', () => { if (!busy) game = gameSel.value; else gameSel.value = game; });
+	const status = el('p', { class: 'hint', textContent: 'Reads each account\'s inventory one after another, with a short pause so Steam does not slow you down. 68 accounts take about 1 to 2 minutes.' });
+	const table = el('div', { class: 'bulk-table' });
+	const go = el('button', { class: 'small primary', type: 'button', textContent: 'Read all inventories' });
+	const stopBtn = el('button', { class: 'small', type: 'button', textContent: 'Stop', hidden: true, onclick: () => { stop = true; } });
+	type Line = { a: Row; tradable?: number; locked?: number; error?: string };
+	const lines: Line[] = all.map((a) => ({ a }));
+
+	const cell = (t: string, cls = ''): HTMLElement => el('span', { class: cls, textContent: t });
+	function draw(): void {
+		const done = lines.filter((l) => l.tradable !== undefined);
+		const sorted = [...lines].sort((x, y) => (y.tradable ?? -1) - (x.tradable ?? -1));
+		const tot = done.reduce((n, l) => n + (l.tradable ?? 0), 0);
+		const lock = done.reduce((n, l) => n + (l.locked ?? 0), 0);
+		table.replaceChildren(
+			el('div', { class: 'bulk-row head' }, cell('Account'), cell('Tradable'), cell('Locked'), cell('')),
+			...sorted.map((l) => el('div', { class: 'bulk-row clickable', title: 'Open in One account', onclick: () => { if (busy) return; tradeSource = l.a.steamId; tradeMode = 'one'; void navigate({ name: 'trades', id: l.a.steamId }); } },
+				cell(accountLabel(l.a.name, l.a.nickname)), cell(l.tradable === undefined ? '' : String(l.tradable)), cell(l.locked === undefined ? '' : String(l.locked)), cell(l.error ?? '', l.error ? 'error' : ''))),
+			el('div', { class: 'bulk-row foot' }, cell(`Total, ${done.length} of ${lines.length} accounts`), cell(String(tot)), cell(String(lock)), cell(''))
+		);
+	}
+	async function readAll(): Promise<void> {
+		busy = true;
+		stop = false;
+		go.disabled = true;
+		stopBtn.hidden = false;
+		for (const l of lines) { delete l.tradable; delete l.locked; delete l.error; }
+		draw();
+		for (const [n, l] of lines.entries()) {
+			if (stop || !alive()) break;
+			status.textContent = `Reading ${n + 1} of ${lines.length}: ${accountLabel(l.a.name, l.a.nickname)}…`;
+			const r = await api.tradeInventory(l.a.steamId, game);
+			if (!alive()) return;
+			if (r.ok) {
+				l.tradable = r.value.items.reduce((t, i) => t + i.amount, 0);
+				l.locked = r.value.locked.reduce((t, x) => t + x.count, 0);
+				if (r.value.cut) l.error = 'Very large, only the first part was read';
+			} else {
+				l.error = r.error;
+				if (isLimit(r.error)) { draw(); status.textContent = `${r.error}. Stopped, nothing more was asked.`; break; }
+			}
+			draw();
+			await sleep(1200);
+		}
+		busy = false;
+		go.disabled = false;
+		stopBtn.hidden = true;
+		if (alive() && !status.textContent?.includes('Stopped')) status.textContent = stop ? 'Stopped.' : 'Done. Click an account to send from it.';
+	}
+	go.addEventListener('click', () => void readAll());
+	draw();
+	table.replaceChildren();
+	show(tradesHeader(), el('main', { class: 'send' }, el('div', { class: 'send-bar' }, field('Game', gameSel), go, stopBtn), status, table));
+}
 
 /** Send every tradeable item of one game from several accounts to one receiver. */
 function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {

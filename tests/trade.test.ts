@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GAMES, accountIdOf, chunk, fetchInventory, fetchOwnTradeLink, parseInventory, parseTradeLink, unlockTime, sendOffer, type Http, type Item } from '../src/main/trade';
+import { GAMES, accountIdOf, chunk, fetchInventory, fetchOwnTradeLink, parseInventory, parseOpenOffers, parseTradeLink, unlockTime, sendOffer, type Http, type Item } from '../src/main/trade';
 
 const LINK = 'https://steamcommunity.com/tradeoffer/new/?partner=1039734271&token=AbCd_-12';
 const item = (n: number): Item => ({ assetId: String(n), group: 'g', name: 'Case', type: 'Container', icon: 'x', color: '', amount: 1 });
@@ -103,5 +103,25 @@ describe('sending', () => {
 		const l = await fetchOwnTradeLink(async () => ({ status: 200, text: html }), '76561198999999999', 'c');
 		expect(l?.token).toBe('AbCd_-12');
 		expect(await fetchOwnTradeLink(async () => ({ status: 200, text: '<html></html>' }), '76561198999999999', 'c')).toBeUndefined();
+	});
+});
+
+describe('parseOpenOffers', () => {
+	it('keeps only open offers, newest first', () => {
+		const out = parseOpenOffers({
+			response: {
+				trade_offers_sent: [
+					{ tradeofferid: '1', trade_offer_state: 2, items_to_give: [{}, {}], accountid_other: 5, time_created: 10 },
+					{ tradeofferid: '2', trade_offer_state: 3, items_to_give: [{}] },
+					{ tradeofferid: '3', trade_offer_state: 9, items_to_give: [{}], accountid_other: 6, time_created: 20 },
+					{ tradeofferid: 'x', trade_offer_state: 2 }
+				]
+			}
+		});
+		expect(out.map((o) => [o.id, o.state, o.items])).toEqual([['3', 'confirm', 1], ['1', 'waiting', 2]]);
+	});
+	it('copes with nothing', () => {
+		expect(parseOpenOffers({ response: {} })).toEqual([]);
+		expect(parseOpenOffers(null)).toEqual([]);
 	});
 });

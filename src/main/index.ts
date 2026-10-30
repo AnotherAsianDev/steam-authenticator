@@ -11,8 +11,9 @@ import { findMaFileFolders, importFolder, normalizeStoreFolder, readMaFile } fro
 import { CredentialStore } from './credentials';
 import { FolderWatcher } from './watcher';
 import { clockOffset, steamNow, syncClock } from './clock';
-import { GAMES, accountIdOf, chunk, fetchHttp, fetchInventory, fetchOwnTradeLink, parseTradeLink, sendOffer, type TradeLink } from './trade';
+import { GAMES, accountIdOf, chunk, fetchHttp, cancelOffer, fetchInventory, fetchOpenOffers, fetchOwnTradeLink, parseTradeLink, sendOffer, type TradeLink } from './trade';
 import { sessionCookie } from './sessions';
+import { openBackup, sealBackup, type BackupAccount } from './backup';
 import { ConfirmationsClient, fetchTransport, type Action } from './confirmations';
 import { MaFileError, parseMaFile } from './mafile';
 import { SettingsStore } from './settings';
@@ -505,6 +506,36 @@ function registerIpc(): void {
 		if (!found) throw new UserError(`Could not read the trade link of ${accounts.get(other)!.accountName}. Paste it instead`);
 		return `https://steamcommunity.com/tradeoffer/new/?partner=${accountIdOf(found.steamId)}&token=${found.token}`;
 	});
+	handle('tradeOffers', async (steamId: unknown) => fetchOpenOffers(fetchHttp, await accounts.webToken(known(steamId))));
+	handle('tradeCancel', async (steamId: unknown, offerId: unknown) => {
+		const id = known(steamId);
+		await cancelOffer(fetchHttp, await accounts.webToken(id), str(offerId, 'offer'));
+		log.info('trade', `${accounts.get(id)!.accountName}: cancelled offer ${String(offerId)}`);
+	});
+	/** Can this account trade right now? Live checks (sign-in, trade link) first, then what is already known. */
+	handle('tradeCheck', async (steamId: unknown) => {
+		const id = known(steamId);
+		const lines: { level: 'ok' | 'warn' | 'bad'; text: string }[] = [];
+		let cookie: string | undefined;
+		try {
+			cookie = await cookieOf(id);
+			lines.push({ level: 'ok', text: 'Signed in, Steam accepts the session' });
+		} catch (err) {
+			lines.push({ level: 'bad', text: err instanceof UserError ? err.message : 'Could not reach Steam' });
+		}
+		if (cookie) {
+			try {
+				const link = await fetchOwnTradeLink(fetchHttp, id, cookie);
+				lines.push(link ? { level: 'ok', text: 'Has a trade link, so it can receive items' } : { level: 'warn', text: 'No trade link found on its trade offer privacy page, so it cannot receive from your other accounts until it has one' });
+			} catch (err) {
+				lines.push({ level: 'warn', text: err instanceof UserError ? err.message : 'Could not read its trade link' });
+			}
+		}
+		for (const b of banLabels(avatars.bans(id))) lines.push({ level: b.startsWith('Trade') ? 'bad' : 'warn', text: b.startsWith('Trade') ? `${b}: Steam blocks or limits trading` : b });
+		for (const r of restrictions(id)) lines.push({ level: 'warn', text: r });
+		if (!lines.some((l) => l.level !== 'ok')) lines.push({ level: 'ok', text: 'No ban, limit or new authenticator known' });
+		return lines;
+	});
 	handle('tradeLinks', () => settings.get().tradeLinks);
 	handle('tradeLinkSave', (name: unknown, link: unknown) => {
 		const l = str(link, 'trade link');
@@ -659,6 +690,45 @@ function registerIpc(): void {
 		if (picked.canceled || !picked.filePath) return null;
 		writeFileSync(picked.filePath, r.text, { mode: 0o600 });
 		return { count: r.count, path: picked.filePath };
+	});
+	handle('backupSave', async (password: unknown) => {
+		const pw = str(password, 'password');
+		if (credentials.locked) throw new UserError('Unlock the program first, the passwords are sealed');
+		const list: BackupAccount[] = store.list().map((steamId) => {
+			const m = meta.get(steamId);
+			const password = credentials.get(steamId);
+			return { steamId, maFile: store.read(steamId), ...(password ? { password } : {}), meta: m };
+		});
+		const file = sealBackup({ version: 1, createdAt: new Date().toISOString(), accounts: list }, pw);
+		const stamp = new Date().toISOString().slice(0, 10);
+		const picked = await dialog.showSaveDialog(win!, { title: 'Save backup', defaultPath: `authenticator-backup-${stamp}.sabk`, filters: [{ name: 'Backup', extensions: ['sabk'] }] });
+		if (picked.canceled || !picked.filePath) return null;
+		writeFileSync(picked.filePath, file, { mode: 0o600 });
+		log.info('app', `Backup saved with ${list.length} account(s)`);
+		return { count: list.length, path: picked.filePath };
+	});
+	handle('backupRestore', async (password: unknown) => {
+		const pw = str(password, 'password');
+		if (credentials.locked) throw new UserError('Unlock the program first');
+		const picked = await dialog.showOpenDialog(win!, { title: 'Choose a backup', properties: ['openFile'], filters: [{ name: 'Backup', extensions: ['sabk'] }] });
+		const path = picked.filePaths[0];
+		if (!path) return null;
+		const content = openBackup(readFileSync(path), pw);
+		let added = 0;
+		let kept = 0;
+		for (const a of content.accounts) {
+			if (store.has(a.steamId)) {
+				kept++;
+				continue;
+			}
+			store.save(a.steamId, a.maFile);
+			if (a.password) credentials.set(a.steamId, a.password);
+			if (a.meta) meta.set(a.steamId, a.meta);
+			added++;
+		}
+		accounts.reload();
+		log.info('app', `Backup restored: ${added} added, ${kept} already here`);
+		return { added, kept };
 	});
 	handle('version', () => app.getVersion());
 	const updates = new UpdateChecker(join(data, 'update.json'), app.getVersion());
