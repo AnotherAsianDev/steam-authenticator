@@ -108,7 +108,7 @@ button:focus-visible, .row:focus-visible, input:focus-visible, select:focus-visi
 }
 /* The time left is the border of the code box: it empties clockwise from the top and turns red at the end. */
 @property --p { syntax: '<angle>'; inherits: true; initial-value: 360deg; }
-.row { --p: 360deg; transition: --p 1s linear, border-color .15s, background-color .25s, transform .15s, box-shadow .15s; }
+.row { --p: 360deg; transition: border-color .15s, background-color .25s, transform .15s, box-shadow .15s; }
 .code::before {
 	content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; pointer-events: none;
 	background: conic-gradient(var(--accent) var(--p), var(--line) 0);
@@ -627,17 +627,8 @@ select { padding-right: 8px; }
 .bulk-row.clickable:hover { background: var(--raised); }
 .bulk-row .cancel-cell { display: flex; justify-content: flex-end; gap: 6px; }
 .bulk-row .small { height: 28px; padding: 0 10px; font-size: 12px; }
-.check-box { display: flex; flex-direction: column; gap: 2px; margin: 0 0 8px; }
-.check-box:empty { display: none; }
-.check-box .health { padding: 1px 0; border: 0; background: none; }
-.check-box .health.warn .hint { color: var(--warn); }
-.check-box .health.bad .hint { color: var(--danger); }
 .bulk-row.head .acct { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600; color: var(--text); }
 .bulk-table.tall { max-height: none; flex: 1; min-height: 0; }
-.check-box .health strong { font-size: 14px; }
-.check-box .health.ok strong { color: var(--ok, #4cc38a); }
-.check-box .health.warn strong { color: var(--warn); }
-.check-box .health.bad strong { color: var(--danger); }
 main.fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 16px; }
 main.fill > .hint { flex: none; }
 
@@ -664,3 +655,17 @@ main.fill > .hint { flex: none; }
 .list.dense:not(.columns):not(.grid) { row-gap: 0; }
 .status { display: inline-flex; align-items: center; gap: 4px; flex: none; }
 .status:empty { display: none; }
+
+/* ------------------------------------------------------- readable text -- */
+.hint { line-height: 1.55; }
+.group, main > .hint, .send .hint { --measure: 74ch; }
+.group > .hint, main > .hint, .send > .hint { max-width: var(--measure); }
+.group { padding-bottom: 16px; }
+.group .hint { margin: 0 0 10px; }
+.group .chips { margin: 0 0 10px; }
+.setting-text { gap: 4px; }
+.setting-text .hint { max-width: 62ch; }
+.setting { padding: 18px 2px; }
+.ban-history { gap: 8px; margin-top: 12px; }
+.ban-history li { display: grid; grid-template-columns: 84px 1fr; gap: 12px; align-items: baseline; }
+.ban-history li .hint { margin: 0; }

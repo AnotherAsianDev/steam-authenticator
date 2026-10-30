@@ -286,6 +286,7 @@ export class AvatarCache {
 		} catch (err) {
 			// Whatever was read before the failure is kept.
 			this.save();
+			if (this.profiles[steamId]?.name !== undefined) this.onUpdate();
 			log.info('avatar', `${steamId}: profile not fully loaded: ${err instanceof Error ? err.message : String(err)}`);
 			this.failed.set(steamId, Date.now());
 		}

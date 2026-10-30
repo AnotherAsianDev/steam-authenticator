@@ -495,19 +495,6 @@ function registerIpc(): void {
 		log.info('trade', `${accounts.get(id)!.accountName}: cancelled offer ${String(offerId)}`);
 	});
 	/** Can this account trade right now? The sign-in is tried live; bans are what the public profile said at its last read. */
-	handle('tradeCheck', async (steamId: unknown) => {
-		const id = known(steamId);
-		const lines: { level: 'ok' | 'warn' | 'bad'; text: string }[] = [];
-		try {
-			await cookieOf(id);
-			lines.push({ level: 'ok', text: 'Signed in, Steam accepts the session' });
-		} catch (err) {
-			lines.push({ level: 'bad', text: err instanceof UserError ? err.message : 'Could not reach Steam' });
-		}
-		for (const b of banLabels(avatars.bans(id))) lines.push({ level: b.startsWith('Trade') ? 'bad' : 'warn', text: b.startsWith('Trade') ? `${b}: Steam blocks or limits trading` : b });
-		if (!lines.some((l) => l.level !== 'ok')) lines.push({ level: 'ok', text: 'No ban known' });
-		return lines;
-	});
 	handle('tradeLinks', () => settings.get().tradeLinks);
 	handle('tradeLinkSave', (name: unknown, link: unknown) => {
 		const l = str(link, 'trade link');

@@ -20,7 +20,6 @@ contextBridge.exposeInMainWorld('api', {
 	tradeLinks: () => call('tradeLinks'),
 	tradeOffers: (id: string) => call('tradeOffers', id),
 	tradeCancel: (id: string, offerId: string) => call('tradeCancel', id, offerId),
-	tradeCheck: (id: string) => call('tradeCheck', id),
 	backupSave: (password: string) => call('backupSave', password),
 	backupRestore: (password: string) => call('backupRestore', password),
 	tradeResolve: (account: string) => call('tradeResolve', account),

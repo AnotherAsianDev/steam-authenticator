@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.3
+- The ring around a code now empties in one smooth sweep instead of in one-second steps.
+- Trades: "Check account" is removed. It only repeated what the sign-in and the ban marks already show, and a trade ban still shows as a warning above the items.
+- Text is easier to read: more space between a setting and its description, long explanations are kept to a comfortable line length, and the ban history on the account page has its dates in a column.
+- Accounts whose Steam profile could not be read completely now show the nickname as soon as it was read, instead of waiting for the next refresh.
+
 ## 0.9.2
 - Trades: when Steam sends the trade-link page somewhere the app will not follow (usually its sign-in page), the app no longer says the session is refused, since the inventory still works. It says Steam would not show that account's trade link and asks you to paste it. The page address Steam answered with is written to the log (no query data).
 - Trades: the trade-link request now also sends a session id, like a browser does.

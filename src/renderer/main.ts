@@ -148,7 +148,6 @@ declare const api: {
 	tradeLinkRemove(link: string): P<{ name: string; link: string }[]>;
 	tradeOffers(id: string): P<{ id: string; state: 'waiting' | 'confirm'; items: number; partner: string; created: number }[]>;
 	tradeCancel(id: string, offerId: string): P<void>;
-	tradeCheck(id: string): P<{ level: 'ok' | 'warn' | 'bad'; text: string }[]>;
 	backupSave(password: string): P<{ count: number; path: string } | null>;
 	backupRestore(password: string): P<{ added: number; kept: number } | null>;
 	tradeSend(id: string, game: string, assetIds: string[], target: { account?: string; link?: string }): P<{ offers: { offerId: string; items: number; confirmed: boolean; note: string }[]; planned: number; problem: string }>;
@@ -347,6 +346,19 @@ function setNav(): void {
 	navButtons.forEach((b, id) => b.classList.toggle('active', id === active));
 	navButtons.get('folder')?.classList.remove('active');
 }
+
+/** The ring around a code empties in one smooth sweep: it is only restarted when a new code begins or the clock drifts, not on every tick. */
+function ring(li: HTMLElement, remaining: number): void {
+	const end = Date.now() + remaining * 1000;
+	const was = Number(li.dataset['ringEnd'] ?? 0);
+	if (was && Math.abs(end - was) < 1600) return;
+	li.dataset['ringEnd'] = String(end);
+	rings.get(li)?.cancel();
+	const from = `${(remaining / 30) * 360}deg`;
+	li.style.setProperty('--p', from);
+	rings.set(li, li.animate({ '--p': [from, '0deg'] }, { duration: remaining * 1000, easing: 'linear', fill: 'forwards' }));
+}
+const rings = new WeakMap<HTMLElement, Animation>();
 
 /** Runs a screen's refresh on a timer, but not while the window is hidden or minimized. */
 function every(ms: number, fn: () => void): void {
@@ -1039,7 +1051,7 @@ async function listScreen(): Promise<void> {
 		codeEl.textContent = row.code;
 
 		drawFlags(li, row);
-		li.style.setProperty('--p', `${(row.remaining / 30) * 360}deg`);
+		ring(li, row.remaining);
 		li.classList.toggle('expiring', row.remaining <= 5);
 	}
 
@@ -1908,7 +1920,7 @@ async function detailScreen(id: string): Promise<void> {
 				...(d.value.bans.length || d.value.banHistory.length ? [el('section', { class: 'group ban-box' }, el('h2', { class: 'todo-title', textContent: 'Bans' }),
 					d.value.bans.length ? el('div', { class: 'chips' }, ...d.value.bans.map((b) => el('span', { class: 'ban-tag', textContent: b }))) : el('p', { class: 'hint', textContent: 'No bans at the moment.' }),
 					el('p', { class: 'hint', textContent: `${d.value.banNote ? d.value.banNote + ' ' : ''}As of the last check. Turn this off under Settings, Watch for bans.` }),
-					...(d.value.banHistory.length ? [el('ul', { class: 'ban-history' }, ...[...d.value.banHistory].reverse().map((e) => el('li', {}, el('span', { class: 'hint', textContent: new Date(e.at).toLocaleDateString() }), ` ${e.what}`)))] : []))] : []),
+					...(d.value.banHistory.length ? [el('ul', { class: 'ban-history' }, ...[...d.value.banHistory].reverse().map((e) => el('li', {}, el('span', { class: 'hint', textContent: new Date(e.at).toLocaleDateString() }), el('span', { textContent: e.what }))))] : []))] : []),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Note and tags' }), noteRow),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Copy' }), chips, pwBlock),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Open on Steam, signed in' }), webBar, el('p', { class: 'hint', textContent: 'Opens a separate window that is already logged in as this account. Nothing is kept when you close it.' })),
@@ -2317,8 +2329,6 @@ async function tradesScreen(wanted?: string): Promise<void> {
 
 	const fromSel = el('select', { ariaLabel: 'Send from' }, ...acc.value.map((a) => el('option', { value: a.steamId, textContent: accountLabel(a.name, a.nickname), selected: a.steamId === id })));
 	fromSel.addEventListener('change', () => { if (!busy) void navigate({ name: 'trades', id: fromSel.value }); else fromSel.value = id; });
-	const checkBox = el('div', { class: 'check-box' });
-	const alive = (): boolean => view.name === 'trades' && tradeMode === 'one';
 	const grid = el('div', { class: 'tiles' });
 	const lockedBox = el('div', { class: 'locked-box', hidden: true });
 	const info = el('p', { class: 'hint', textContent: '' });
@@ -2510,17 +2520,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 	show(
 		tradesHeader(),
 		el('main', { class: 'send' },
-			el('div', { class: 'send-from' }, el('span', { textContent: 'Send items from' }), fromSel,
-				el('button', { class: 'small', type: 'button', textContent: 'Check account', onclick: async (e: Event) => {
-					const b = e.currentTarget as HTMLButtonElement;
-					b.disabled = true;
-					checkBox.replaceChildren(el('p', { class: 'hint', textContent: 'Checking…' }));
-					const r = await api.tradeCheck(id);
-					b.disabled = false;
-					if (!alive()) return;
-					checkBox.replaceChildren(...(r.ok ? verdict(r.value) : [el('p', { class: 'hint error', textContent: r.error })]));
-				} })),
-			checkBox,
+			el('div', { class: 'send-from' }, el('span', { textContent: 'Send items from' }), fromSel),
 			...(tradeNotes(me).length ? [el('p', { class: 'hint warnline', textContent: `This account may not be able to trade: ${tradeNotes(me).join('. ')}.` })] : []),
 			el('div', { class: 'send-bar' }, field('Game', gameSel), field('Filter', search), el('button', { class: 'small', type: 'button', textContent: 'Select all shown', onclick: () => { for (const [, g] of visible()) for (const i of g) picked.add(i.assetId); drawGrid(); } }), el('button', { class: 'small', type: 'button', textContent: 'None', onclick: () => { picked.clear(); drawGrid(); } })),
 			info,
@@ -2537,17 +2537,6 @@ async function tradesScreen(wanted?: string): Promise<void> {
 	void load();
 }
 
-/** One answer instead of a list: can it trade, and if not or not sure, why. */
-const verdict = (lines: { level: 'ok' | 'warn' | 'bad'; text: string }[]): HTMLElement[] => {
-	const bad = lines.filter((l) => l.level === 'bad');
-	const warn = lines.filter((l) => l.level === 'warn');
-	const head = bad.length ? ['bad', '✕ Cannot trade right now'] : warn.length ? ['warn', '! Can trade, but watch out'] : ['ok', '✓ Can trade now'];
-	return [
-		el('div', { class: `health ${head[0]}` }, el('strong', { textContent: head[1] })),
-		...[...bad, ...warn].map((l) => el('div', { class: `health ${l.level}` }, el('span', { class: 'hint', textContent: l.text }))),
-		el('p', { class: 'hint fine', textContent: 'Based on the sign-in and the ban check. Steam has the final say.' })
-	];
-};
 const tradeNotes = (a: Row): string[] => [...a.bans.filter((b) => b.startsWith('Trade')).map((b) => `${b}: Steam blocks or limits trading`)];
 const field = (label: string, control: HTMLElement): HTMLElement => el('label', { class: 'labelled' }, el('span', { textContent: label }), control);
 const sleep = (ms: number): Promise<void> => new Promise((done) => window.setTimeout(done, ms));
