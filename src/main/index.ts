@@ -302,6 +302,7 @@ function registerIpc(): void {
 				nickname: avatars.nickname(steamId) ?? null,
 				bans: watchBans ? banLabels(avatars.bans(steamId)) : [],
 				tags: meta.get(steamId).tags,
+				skipBulk: meta.get(steamId).skipBulk,
 				sessionDays: accounts.sessionDaysLeft(steamId) ?? null,
 				hasPassword: accounts.hasPassword(steamId),
 				state: st.state,
@@ -364,7 +365,7 @@ function registerIpc(): void {
 	handle('setMeta', (steamId: unknown, patch: unknown) => {
 		const id = known(steamId);
 		if (typeof patch !== 'object' || patch === null) throw new UserError('Invalid change');
-		return meta.set(id, patch as { pinned?: unknown; note?: unknown; tags?: unknown });
+		return meta.set(id, patch as { pinned?: unknown; note?: unknown; tags?: unknown; skipBulk?: unknown });
 	});
 	handle('healthCheck', async () => {
 		await syncClock();

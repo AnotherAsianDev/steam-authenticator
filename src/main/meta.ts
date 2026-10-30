@@ -5,6 +5,8 @@ export interface AccountMetaEntry {
 	pinned: boolean;
 	note: string;
 	tags: string[];
+	/** "Select all" in the Trades tab leaves this account out. */
+	skipBulk: boolean;
 }
 export const NOTE_MAX = 120;
 export const TAG_MAX = 20;
@@ -45,8 +47,8 @@ export class AccountMeta {
 				for (const [id, v] of Object.entries(raw)) {
 					if (!/^\d{17}$/.test(id) || typeof v !== 'object' || v === null) continue;
 					const o = v as Record<string, unknown>;
-					const entry = { pinned: o['pinned'] === true, note: cleanNote(o['note']), tags: cleanTags(o['tags']) };
-					if (entry.pinned || entry.note || entry.tags.length) this.data.set(id, entry);
+					const entry = { pinned: o['pinned'] === true, note: cleanNote(o['note']), tags: cleanTags(o['tags']), skipBulk: o['skipBulk'] === true };
+					if (entry.pinned || entry.note || entry.tags.length || entry.skipBulk) this.data.set(id, entry);
 				}
 				return;
 			} catch {
@@ -56,17 +58,18 @@ export class AccountMeta {
 	}
 
 	get(steamId: string): AccountMetaEntry {
-		return this.data.get(steamId) ?? { pinned: false, note: '', tags: [] };
+		return this.data.get(steamId) ?? { pinned: false, note: '', tags: [], skipBulk: false };
 	}
 
-	set(steamId: string, patch: { pinned?: unknown; note?: unknown; tags?: unknown }): AccountMetaEntry {
+	set(steamId: string, patch: { pinned?: unknown; note?: unknown; tags?: unknown; skipBulk?: unknown }): AccountMetaEntry {
 		const cur = this.get(steamId);
 		const next = {
 			pinned: typeof patch.pinned === 'boolean' ? patch.pinned : cur.pinned,
 			note: patch.note !== undefined ? cleanNote(patch.note) : cur.note,
-			tags: patch.tags !== undefined ? cleanTags(patch.tags) : cur.tags
+			tags: patch.tags !== undefined ? cleanTags(patch.tags) : cur.tags,
+			skipBulk: typeof patch.skipBulk === 'boolean' ? patch.skipBulk : cur.skipBulk
 		};
-		if (next.pinned || next.note || next.tags.length) this.data.set(steamId, next);
+		if (next.pinned || next.note || next.tags.length || next.skipBulk) this.data.set(steamId, next);
 		else this.data.delete(steamId);
 		this.save();
 		return next;

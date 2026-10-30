@@ -10,6 +10,7 @@ interface Row {
 	pinned: boolean;
 	note: string;
 	tags: string[];
+	skipBulk: boolean;
 	bans: string[];
 	/** Days until the saved sign-in runs out, when that is soon and no password is saved to renew it. */
 	sessionDays: number | null;
@@ -133,7 +134,7 @@ declare const api: {
 	copyCode(id: string): P<void>;
 	copyField(id: string, field: string): P<void>;
 	detail(id: string): P<{ steamId: string; name: string; nickname: string | null; hasRevocation: boolean; hasPassword: boolean; pinned: boolean; note: string; tags: string[]; bans: string[]; banNote: string; banHistory: { at: number; what: string }[]; sessionDays: number | null }>;
-	setMeta(id: string, patch: { pinned?: boolean; note?: string; tags?: string[] | string }): P<{ pinned: boolean; note: string; tags: string[] }>;
+	setMeta(id: string, patch: { pinned?: boolean; note?: string; tags?: string[] | string; skipBulk?: boolean }): P<{ pinned: boolean; note: string; tags: string[]; skipBulk: boolean }>;
 	apiKeyState(): P<{ has: boolean; locked: boolean; hint: string }>;
 	apiKeySet(key: string): P<{ has: boolean; locked: boolean; hint: string }>;
 	apiKeyTest(): P<'ok' | 'invalid' | 'network'>;
@@ -2532,7 +2533,7 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 	}
 	const pickAll = (on: boolean): void => {
 		if (busy) return;
-		for (const a of shownAccounts()) if (a.steamId !== receiverId()) { if (on) sources.add(a.steamId); else sources.delete(a.steamId); }
+		for (const a of shownAccounts()) if (a.steamId !== receiverId() && !(on && a.skipBulk)) { if (on) sources.add(a.steamId); else sources.delete(a.steamId); }
 		invalidate();
 		drawList();
 	};
@@ -2542,12 +2543,23 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 		counter);
 	function drawList(): void {
 		const receiver = receiverId();
-		counter.textContent = `${sources.size} of ${all.length} selected`;
+		const left = all.filter((a) => a.skipBulk).length;
+		counter.textContent = `${sources.size} of ${all.length} selected${left ? ` · ${left} left out of select all` : ''}`;
 		const shown = shownAccounts();
 		list.replaceChildren(...(shown.length ? shown.map((a) => {
 			const box = el('input', { type: 'checkbox', checked: sources.has(a.steamId), disabled: a.steamId === receiver || busy, ariaLabel: `Send from ${accountLabel(a.name, a.nickname)}` });
 			box.addEventListener('change', () => { if (box.checked) sources.add(a.steamId); else sources.delete(a.steamId); invalidate(); drawList(); });
-			return el('label', { class: `bulk-acc${a.steamId === receiver ? ' off' : ''}`, title: a.note || '' }, box, el('span', { textContent: accountLabel(a.name, a.nickname) }), ...(a.steamId === receiver ? [el('small', { class: 'hint', textContent: 'receives' })] : []));
+			const skip = el('button', { class: `skip${a.skipBulk ? ' on' : ''}`, type: 'button', title: a.skipBulk ? 'Left out of "Select all shown". Click to include again' : 'Leave out of "Select all shown"', ariaLabel: a.skipBulk ? `Include ${a.name} in Select all again` : `Leave ${a.name} out of Select all`, disabled: busy });
+			skip.innerHTML = svgIcon('ban', 12);
+			skip.addEventListener('click', async (e) => {
+				e.preventDefault();
+				const r = await api.setMeta(a.steamId, { skipBulk: !a.skipBulk });
+				if (!r.ok) return toast(r.error, true);
+				a.skipBulk = r.value.skipBulk;
+				if (a.skipBulk && sources.delete(a.steamId)) invalidate();
+				drawList();
+			});
+			return el('label', { class: `bulk-acc${a.steamId === receiver ? ' off' : ''}${a.skipBulk ? ' skipped' : ''}`, title: a.note || '' }, box, el('span', { textContent: accountLabel(a.name, a.nickname) }), ...(a.steamId === receiver ? [el('small', { class: 'hint', textContent: 'receives' })] : []), skip);
 		}) : [el('p', { class: 'hint', textContent: 'No account matches.' })]));
 	}
 	function invalidate(): void {

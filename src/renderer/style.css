@@ -577,3 +577,10 @@ button:active:not(:disabled) { transform: scale(.97); }
 .send-to .labelled { flex: 1; }
 .send-bar .labelled:first-child { flex: 0 0 auto; }
 .send-bar .labelled:nth-child(2) { flex: 1; }
+
+.bulk-acc .skip { margin-left: auto; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted); opacity: 0; }
+.bulk-acc:hover .skip, .bulk-acc .skip.on, .bulk-acc .skip:focus-visible { opacity: 1; }
+.bulk-acc .skip:hover { background: var(--raised); color: var(--text); }
+.bulk-acc .skip.on { color: var(--warn); }
+.bulk-acc.skipped > span { color: var(--muted); }
+.bulk-acc small + .skip { margin-left: 6px; }

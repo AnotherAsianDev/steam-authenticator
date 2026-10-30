@@ -13,7 +13,7 @@ describe('account meta', () => {
 		const m = new AccountMeta(f);
 		m.set(ID, { pinned: true, note: '  trade   alt ' });
 		const again = new AccountMeta(f);
-		expect(again.get(ID)).toEqual({ pinned: true, note: 'trade alt', tags: [] });
+		expect(again.get(ID)).toEqual({ pinned: true, note: 'trade alt', tags: [], skipBulk: false });
 	});
 	it('drops an entry that is neither pinned nor noted', () => {
 		const f = file();
@@ -44,5 +44,12 @@ describe('account meta', () => {
 		const f = file();
 		new AccountMeta(f).set(ID, { tags: 'alt, trade' });
 		expect(new AccountMeta(f).get(ID).tags).toEqual(['alt']);
+	});
+	it('remembers an account that is left out of select all', () => {
+		const f = file();
+		new AccountMeta(f).set(ID, { skipBulk: true });
+		expect(new AccountMeta(f).get(ID).skipBulk).toBe(true);
+		new AccountMeta(f).set(ID, { skipBulk: false });
+		expect(new AccountMeta(f).get(ID)).toEqual({ pinned: false, note: '', tags: [], skipBulk: false });
 	});
 });
