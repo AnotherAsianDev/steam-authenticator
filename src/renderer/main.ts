@@ -2330,22 +2330,24 @@ async function tradesScreen(wanted?: string): Promise<void> {
 	const targetSel = el('select', { ariaLabel: 'Send to' });
 	const linkInput = el('input', { type: 'text', class: 'search', placeholder: 'https://steamcommunity.com/tradeoffer/new/?partner=…&token=…', ariaLabel: 'Trade link', spellcheck: false });
 	const linkName = el('input', { type: 'text', class: 'search', placeholder: 'Name to save it under', ariaLabel: 'Name for the trade link', maxLength: 30, spellcheck: false });
-	const linkBox = el('div', { class: 'link-box' }, linkInput, el('div', { class: 'row-actions left' }, linkName,
+	const linkBox = el('div', { class: 'link-box' }, linkInput, el('div', { class: 'link-save' }, linkName,
 		el('button', { class: 'small', type: 'button', textContent: 'Save link', onclick: async () => {
 			const r = await api.tradeLinkSave(linkName.value, linkInput.value);
 			if (!r.ok) return toast(r.error, true);
 			savedLinks = r.value;
 			drawTargets(`l:${linkInput.value.trim()}`);
 			toast('Trade link saved');
-		} }),
-		el('button', { class: 'small', type: 'button', textContent: 'Remove saved', onclick: async () => {
+		} })));
+	const savedBox = el('div', { class: 'link-box' }, el('div', { class: 'link-save' }, el('span', { class: 'hint', textContent: 'Saved trade link' }),
+		el('button', { class: 'small danger', type: 'button', textContent: 'Remove', onclick: async () => {
 			const cur = targetSel.value;
-			if (!cur.startsWith('l:')) return toast('Pick a saved link first', true);
+			if (!cur.startsWith('l:')) return;
 			const r = await api.tradeLinkRemove(cur.slice(2));
 			if (!r.ok) return toast(r.error, true);
 			savedLinks = r.value;
 			drawTargets();
 		} })));
+	const showLinkBoxes = (): void => { linkBox.hidden = targetSel.value !== 'paste'; savedBox.hidden = !targetSel.value.startsWith('l:'); };
 	function drawTargets(select = ''): void {
 		const group = (label: string, opts: HTMLOptionElement[]): HTMLElement[] => {
 			if (!opts.length) return [];
@@ -2362,10 +2364,10 @@ async function tradesScreen(wanted?: string): Promise<void> {
 		);
 		targetSel.value = select;
 		if (targetSel.value !== select) targetSel.value = '';
-		linkBox.hidden = targetSel.value !== 'paste';
+		showLinkBoxes();
 		drawSummary();
 	}
-	targetSel.addEventListener('change', () => { linkBox.hidden = targetSel.value !== 'paste'; drawSummary(); });
+	targetSel.addEventListener('change', () => { showLinkBoxes(); drawSummary(); });
 
 	const groups = (): [string, TradeItem[]][] => {
 		const map = new Map<string, TradeItem[]>();
@@ -2527,6 +2529,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 			lockedBox,
 			el('div', { class: 'send-to' }, el('div', { class: 'send-count' }, count), field('Send to', targetSel), sendBtn),
 			linkBox,
+			savedBox,
 			confirmBox,
 			result)
 	);

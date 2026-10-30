@@ -125,3 +125,21 @@ describe('parseOpenOffers', () => {
 		expect(parseOpenOffers(null)).toEqual([]);
 	});
 });
+
+describe('own trade link behind a custom address', () => {
+	const page = '<input value="https://steamcommunity.com/tradeoffer/new/?partner=1039734271&amp;token=AbCd_-12">';
+	it('follows the move to the custom address', async () => {
+		const seen: string[] = [];
+		const http: Http = async (req) => {
+			seen.push(req.url);
+			return req.url.includes('/profiles/') ? { status: 302, text: '', location: '/id/storage/tradeoffers/privacy' } : { status: 200, text: page };
+		};
+		const link = await fetchOwnTradeLink(http, '76561199000000001', 'c');
+		expect(link?.token).toBe('AbCd_-12');
+		expect(seen[1]).toBe('https://steamcommunity.com/id/storage/tradeoffers/privacy');
+	});
+	it('does not follow a move to the login page or to another site', async () => {
+		await expect(fetchOwnTradeLink(async () => ({ status: 302, text: '', location: 'https://steamcommunity.com/login/home' }), '76561199000000001', 'c')).rejects.toThrow(/HTTP 302/);
+		await expect(fetchOwnTradeLink(async () => ({ status: 302, text: '', location: 'https://evil.example/x' }), '76561199000000001', 'c')).rejects.toThrow(/HTTP 302/);
+	});
+});

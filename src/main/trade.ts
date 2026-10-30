@@ -88,7 +88,7 @@ export interface HttpRequest {
 	headers: Record<string, string>;
 	body?: string;
 }
-export type Http = (req: HttpRequest) => Promise<{ status: number; text: string }>;
+export type Http = (req: HttpRequest) => Promise<{ status: number; text: string; location?: string }>;
 
 export const fetchHttp: Http = async (req) => {
 	const res = await fetch(req.url, {
@@ -98,7 +98,7 @@ export const fetchHttp: Http = async (req) => {
 		redirect: 'manual',
 		signal: AbortSignal.timeout(30_000)
 	});
-	return { status: res.status, text: await res.text() };
+	return { status: res.status, text: await res.text(), ...(res.headers.get('location') ? { location: res.headers.get('location')! } : {}) };
 };
 
 const BROWSER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
@@ -204,7 +204,20 @@ export async function fetchInventory(http: Http, steamId: string, game: Game, co
 
 /** An account's own trade link, read from its trade-offer privacy page. */
 export async function fetchOwnTradeLink(http: Http, steamId: string, cookie: string): Promise<TradeLink | undefined> {
-	const res = await http({ method: 'GET', url: `https://steamcommunity.com/profiles/${steamId}/tradeoffers/privacy`, headers: { 'User-Agent': BROWSER, Cookie: cookie } });
+	// Steam sends /profiles/<id>/… on to /id/<custom name>/… for accounts with a custom address, so follow that, but only on steamcommunity.com and never to the login page.
+	let url = `https://steamcommunity.com/profiles/${steamId}/tradeoffers/privacy`;
+	let res = await http({ method: 'GET', url, headers: { 'User-Agent': BROWSER, Cookie: cookie } });
+	for (let hop = 0; hop < 3 && res.status >= 300 && res.status < 400 && res.location; hop++) {
+		let next: URL;
+		try {
+			next = new URL(res.location, url);
+		} catch {
+			break;
+		}
+		if (next.protocol !== 'https:' || next.hostname !== 'steamcommunity.com' || /\/login/i.test(next.pathname)) break;
+		url = next.toString();
+		res = await http({ method: 'GET', url, headers: { 'User-Agent': BROWSER, Cookie: cookie } });
+	}
 	checkStatus(res.status, 'reading the trade link');
 	const m = /https:\/\/steamcommunity\.com\/tradeoffer\/new\/\?partner=(\d+)(?:&amp;|&)token=([\w-]+)/.exec(res.text);
 	if (!m) return undefined;

@@ -543,6 +543,10 @@ button:active:not(:disabled) { transform: scale(.97); }
 .send-count { min-width: 90px; font-size: 13px; }
 .link-box { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .link-box[hidden], .send-confirm[hidden] { display: none; }
+.link-save { display: flex; align-items: center; gap: 8px; }
+.link-save input { flex: 1; min-width: 0; width: auto; }
+.link-save .hint { flex: 1; margin: 0; }
+.link-save button { flex: none; }
 .send-confirm { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; padding: 14px 16px; background: var(--surface); border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--line)); border-radius: 12px; animation: rise .2s ease-out; }
 .send-confirm p { margin: 0; }
 .confirm-actions { display: flex; align-items: center; gap: 8px; }
