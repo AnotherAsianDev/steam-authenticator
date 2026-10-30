@@ -550,3 +550,6 @@ button:active:not(:disabled) { transform: scale(.97); }
 .item .until { font-size: 10.5px; color: var(--muted); }
 .send-result { margin-top: 10px; }
 .send-result .good { color: var(--ok, #4cc38a); }
+
+.send-from { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; color: var(--muted); }
+.send-from select { max-width: 280px; }

@@ -10,7 +10,7 @@ A lean desktop Steam Guard authenticator for Windows. Plain maFiles next to the 
 <td width="50%"><img src="docs/screenshots/settings.png" alt="Settings"><br><sub>Settings in tabs: theme, bans and API key, security, import</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/screenshots/send.png" alt="Send items"><br><sub>Send tradeable items to another account or a trade link</sub></td>
+<td width="50%"><img src="docs/screenshots/send.png" alt="Send items"><br><sub>Trades tab: send tradeable items to another account or a trade link</sub></td>
 <td width="50%"><img src="docs/screenshots/confirmations.png" alt="Confirmations"><br><sub>Confirmations across all accounts, grouped and filterable</sub></td>
 </tr>
 <tr>
@@ -49,7 +49,7 @@ Minimal desktop Steam Guard authenticator (Electron + TypeScript, no UI framewor
   A refresh token is kept in `sessions.json` (plain text).
 - **Copy** username, password (if saved), shared secret, identity secret, revocation code, SteamID64.
 - **Profile pictures** from the public profile (no API key), at most once a week per account.
-- **Send items:** pick an account's tradeable items (with pictures) and send them to another of your accounts or a trade link in one go; offers are split, checked against the live inventory and confirmed for you.
+- **Trades tab:** pick an account's tradeable items (with pictures) and send them to another of your accounts or a trade link in one go; offers are split, checked against the live inventory and confirmed for you.
 - **Settings:** in tabs: theme (system, light or dark), nickname, SteamID64, pictures, ban watching and the optional API key, check on startup / optional interval, clipboard clearing, master password and PIN, updates, import folders, health check.
 
     npm install      (PowerShell: npm.cmd install)

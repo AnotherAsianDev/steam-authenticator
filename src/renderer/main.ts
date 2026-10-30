@@ -218,7 +218,7 @@ const root = document.getElementById('app')!;
 let settings: Settings;
 let vaultState: VaultInfo = { enabled: false, locked: false, pin: false, pinTries: 0 };
 let timer: number | undefined;
-let view: { name: 'list' } | { name: 'trash' } | { name: 'log' } | { name: 'todo' } | { name: 'export' } | { name: 'confirms' } | { name: 'add' } | { name: 'settings' } | { name: 'detail'; id: string } | { name: 'send'; id: string } = { name: 'list' };
+let view: { name: 'list' } | { name: 'trash' } | { name: 'log' } | { name: 'todo' } | { name: 'export' } | { name: 'confirms' } | { name: 'add' } | { name: 'settings' } | { name: 'detail'; id: string } | { name: 'trades'; id?: string } = { name: 'list' };
 let refreshView: () => void = () => undefined;
 const avatarImages = new Map<string, string>();
 
@@ -239,6 +239,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
 
 const ICONS: Record<string, string> = {
 	codes: '<path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m9 12 2 2 4-4"/>',
+	trades: '<path d="M4 8h14l-3-3M20 16H6l3 3"/>',
 	confirms: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="m8.5 9 1.5 1.5L13 7.5M8.5 16l1.5 1.5L13 14.5M15.5 9.5h2M15.5 16.5h2"/>',
 	todo: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.2 1.2L6.8 5M3.5 12l1.2 1.2L6.8 11M3.5 18l1.2 1.2L6.8 17"/>',
 	export: '<path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>',
@@ -311,6 +312,7 @@ function buildShell(): void {
 			{ class: 'navlist' },
 			item('codes', 'Codes', () => void navigate({ name: 'list' })),
 			item('confirms', 'Confirmations', () => void navigate({ name: 'confirms' }), true),
+			item('trades', 'Trades', () => void navigate({ name: 'trades' })),
 			item('todo', 'To do', () => void navigate({ name: 'todo' }), true),
 			item('add', 'Add account', () => void navigate({ name: 'add' })),
 			item('export', 'Export', () => void navigate({ name: 'export' }))
@@ -333,7 +335,7 @@ function buildShell(): void {
 	applySettings(settings);
 }
 function setNav(): void {
-	const active = view.name === 'list' || view.name === 'detail' || view.name === 'send' ? 'codes' : view.name;
+	const active = view.name === 'list' || view.name === 'detail' ? 'codes' : view.name;
 	navButtons.forEach((b, id) => b.classList.toggle('active', id === active));
 	navButtons.get('folder')?.classList.remove('active');
 }
@@ -509,7 +511,7 @@ async function navigate(v: typeof view): Promise<void> {
 	else if (v.name === 'log') await logScreen();
 	else if (v.name === 'trash') await trashScreen();
 	else if (v.name === 'export') await exportScreen();
-	else if (v.name === 'send') await sendScreen(v.id);
+	else if (v.name === 'trades') await tradesScreen(v.id);
 	else await detailScreen(v.id);
 }
 
@@ -854,7 +856,7 @@ async function listScreen(): Promise<void> {
 			'sep',
 			{ head: 'Account' },
 			{ label: row.pinned ? 'Unpin' : 'Pin to the top', run: async () => { const r = await api.setMeta(id, { pinned: !row.pinned }); if (!r.ok) return toast(r.error, true); await refresh(); } },
-			{ label: 'Send items…', run: () => void navigate({ name: 'send', id }) },
+			{ label: 'Send items…', run: () => void navigate({ name: 'trades', id }) },
 			{ label: 'Details, note and tags…', run: () => void navigate({ name: 'detail', id }) },
 			{ label: row.pending ? `Confirmations (${row.pending})…` : 'Confirmations…', run: () => void navigate({ name: 'confirms' }) },
 			{ label: 'Check confirmations now', run: async () => { const r = await api.refresh(id); toast(r.ok ? 'Checked' : r.error, !r.ok); await refresh(); } },
@@ -1855,7 +1857,7 @@ async function detailScreen(id: string): Promise<void> {
 	const webBar = el(
 		'div',
 		{ class: 'chips' },
-		el('button', { class: 'chip', type: 'button', textContent: 'Send items…', onclick: () => void navigate({ name: 'send', id }) }),
+		el('button', { class: 'chip', type: 'button', textContent: 'Send items…', onclick: () => void navigate({ name: 'trades', id }) }),
 		...([['profile', 'Profile'], ['inventory', 'Inventory'], ['tradeoffers', 'Trade offers'], ['market', 'Market'], ['store', 'Store'], ['account', 'Account']] as const).map(([target, label]) =>
 			el('button', {
 				class: 'chip',
@@ -2233,12 +2235,15 @@ const GAME_CHOICES: [string, string][] = [['cs2', 'Counter-Strike 2'], ['dota2',
 const itemImage = (icon: string): string => `https://community.cloudflare.steamstatic.com/economy/image/${icon}/96fx96f`;
 const OFFER_SIZE = 100;
 
-/** Pick tradeable items of one account and send them to another of your accounts or to a trade link. */
-async function sendScreen(id: string): Promise<void> {
+/** The Trades tab: pick tradeable items of one account and send them to another of your accounts or to a trade link. */
+let tradeSource = '';
+async function tradesScreen(wanted?: string): Promise<void> {
 	const [acc, links] = await Promise.all([api.accounts(), api.tradeLinks()]);
 	if (!acc.ok) return void toast(acc.error, true);
-	const me = acc.value.find((a) => a.steamId === id);
-	if (!me) return goList();
+	if (!acc.value.length) return void show(el('header', {}, el('h1', { class: 'title', textContent: 'Trades' })), el('main', {}, el('p', { class: 'hint', textContent: 'Add an account first.' })));
+	const id = [wanted, tradeSource].find((x) => x && acc.value.some((a) => a.steamId === x)) ?? acc.value[0]!.steamId;
+	tradeSource = id;
+	const me = acc.value.find((a) => a.steamId === id)!;
 	const others = acc.value.filter((a) => a.steamId !== id);
 	let savedLinks = links.ok ? links.value : [];
 	let game = 'cs2';
@@ -2248,6 +2253,8 @@ async function sendScreen(id: string): Promise<void> {
 	let filter = '';
 	let busy = false;
 
+	const fromSel = el('select', { ariaLabel: 'Send from' }, ...acc.value.map((a) => el('option', { value: a.steamId, textContent: accountLabel(a.name, a.nickname), selected: a.steamId === id })));
+	fromSel.addEventListener('change', () => { if (!busy) void navigate({ name: 'trades', id: fromSel.value }); else fromSel.value = id; });
 	const grid = el('div', { class: 'items' });
 	const lockedBox = el('div', { class: 'locked-box', hidden: true });
 	const info = el('p', { class: 'hint', textContent: '' });
@@ -2436,8 +2443,9 @@ async function sendScreen(id: string): Promise<void> {
 
 	drawTargets();
 	show(
-		backHeader(`Send items from ${accountLabel(me.name, me.nickname)}`, () => void navigate({ name: 'detail', id })),
+		el('header', {}, el('h1', { class: 'title', textContent: 'Trades' })),
 		el('main', { class: 'send' },
+			el('div', { class: 'send-from' }, el('span', { textContent: 'Send items from' }), fromSel),
 			el('div', { class: 'send-bar' }, gameSel, search, el('button', { class: 'small', type: 'button', textContent: 'Select all shown', onclick: () => { for (const [, g] of visible()) for (const i of g) picked.add(i.assetId); drawGrid(); } }), el('button', { class: 'small', type: 'button', textContent: 'None', onclick: () => { picked.clear(); drawGrid(); } })),
 			info,
 			grid,
