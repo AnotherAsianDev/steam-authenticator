@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.2
+- Trades: when Steam sends the trade-link page somewhere the app will not follow (usually its sign-in page), the app no longer says the session is refused, since the inventory still works. It says Steam would not show that account's trade link and asks you to paste it. The page address Steam answered with is written to the log (no query data).
+- Trades: the trade-link request now also sends a session id, like a browser does.
+
 ## 0.9.1
 - Trades, check: "Check account" now only looks at the sign-in and at bans. The unreliable trade-link lookup and the market, limit and authenticator-age checks are gone, so it no longer shows warnings that Steam cannot confirm.
 - Trades, send: the controls are one tidy panel (selected count, Send to, trade link, Save as, Review). Saved links can be removed from the same row.

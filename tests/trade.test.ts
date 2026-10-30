@@ -138,8 +138,8 @@ describe('own trade link behind a custom address', () => {
 		expect(link?.token).toBe('AbCd_-12');
 		expect(seen[1]).toBe('https://steamcommunity.com/id/storage/tradeoffers/privacy');
 	});
-	it('does not follow a move to the login page or to another site', async () => {
-		await expect(fetchOwnTradeLink(async () => ({ status: 302, text: '', location: 'https://steamcommunity.com/login/home' }), '76561199000000001', 'c')).rejects.toThrow(/HTTP 302/);
-		await expect(fetchOwnTradeLink(async () => ({ status: 302, text: '', location: 'https://evil.example/x' }), '76561199000000001', 'c')).rejects.toThrow(/HTTP 302/);
+	it('gives up, without a session error, on a move to the login page or to another site', async () => {
+		await expect(fetchOwnTradeLink(async () => ({ status: 302, text: '', location: 'https://steamcommunity.com/login/home' }), '76561199000000001', 'c')).resolves.toBeUndefined();
+		await expect(fetchOwnTradeLink(async () => ({ status: 302, text: '', location: 'https://evil.example/x' }), '76561199000000001', 'c')).resolves.toBeUndefined();
 	});
 });

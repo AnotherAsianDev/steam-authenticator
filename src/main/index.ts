@@ -485,7 +485,7 @@ function registerIpc(): void {
 	handle('tradeResolve', async (account: unknown) => {
 		const other = known(account);
 		const found = await fetchOwnTradeLink(fetchHttp, other, await cookieOf(other));
-		if (!found) throw new UserError(`Could not read the trade link of ${accounts.get(other)!.accountName}. Paste it instead`);
+		if (!found) throw new UserError(`Steam would not show the trade link of ${accounts.get(other)!.accountName} to this app. Paste that account's trade link instead (Steam: Inventory > Trade offers > Who can send me trade offers)`);
 		return `https://steamcommunity.com/tradeoffer/new/?partner=${accountIdOf(found.steamId)}&token=${found.token}`;
 	});
 	handle('tradeOffers', async (steamId: unknown) => fetchOpenOffers(fetchHttp, await accounts.webToken(known(steamId))));
@@ -527,7 +527,7 @@ function registerIpc(): void {
 			const other = known(t.account);
 			if (other === id) throw new UserError('Choose a different account to receive the items');
 			const found = await fetchOwnTradeLink(fetchHttp, other, await cookieOf(other));
-			if (!found) throw new UserError(`Could not read the trade link of ${accounts.get(other)!.accountName}. Paste it instead`);
+			if (!found) throw new UserError(`Steam would not show the trade link of ${accounts.get(other)!.accountName} to this app. Paste that account's trade link instead (Steam: Inventory > Trade offers > Who can send me trade offers)`);
 			to = found;
 			toName = accounts.get(other)!.accountName;
 		} else {

@@ -206,7 +206,8 @@ export async function fetchInventory(http: Http, steamId: string, game: Game, co
 export async function fetchOwnTradeLink(http: Http, steamId: string, cookie: string): Promise<TradeLink | undefined> {
 	// Steam sends /profiles/<id>/… on to /id/<custom name>/… for accounts with a custom address, so follow that, but only on steamcommunity.com and never to the login page.
 	let url = `https://steamcommunity.com/profiles/${steamId}/tradeoffers/privacy`;
-	let res = await http({ method: 'GET', url, headers: { 'User-Agent': BROWSER, Cookie: cookie } });
+	const headers = { 'User-Agent': BROWSER, Cookie: `${cookie}; sessionid=${randomBytes(12).toString('hex')}` };
+	let res = await http({ method: 'GET', url, headers });
 	for (let hop = 0; hop < 3 && res.status >= 300 && res.status < 400 && res.location; hop++) {
 		let next: URL;
 		try {
@@ -216,7 +217,12 @@ export async function fetchOwnTradeLink(http: Http, steamId: string, cookie: str
 		}
 		if (next.protocol !== 'https:' || next.hostname !== 'steamcommunity.com' || /\/login/i.test(next.pathname)) break;
 		url = next.toString();
-		res = await http({ method: 'GET', url, headers: { 'User-Agent': BROWSER, Cookie: cookie } });
+		res = await http({ method: 'GET', url, headers });
+	}
+	if (res.status >= 300 && res.status < 400) {
+		// Steam sent us somewhere we will not follow (usually its sign-in page). The link cannot be read this way, which is not the same as a dead session: the inventory still works.
+		log.warn('trade', `Trade link page answered HTTP ${res.status} to ${(res.location ?? '').replace(/[?#].*$/, '')}`);
+		return undefined;
 	}
 	checkStatus(res.status, 'reading the trade link');
 	const m = /https:\/\/steamcommunity\.com\/tradeoffer\/new\/\?partner=(\d+)(?:&amp;|&)token=([\w-]+)/.exec(res.text);
