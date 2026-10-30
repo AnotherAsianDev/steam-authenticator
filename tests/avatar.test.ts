@@ -89,3 +89,15 @@ describe('bans', () => {
 	});
 });
 
+
+import { extractFromPage } from '../src/main/avatar';
+describe('profile page of an account that was never set up', () => {
+	it('reads the name and picture', () => {
+		const html = '<title>Steam Community :: figment &amp; co</title><link rel="image_src" href="https://avatars.steamstatic.com/abc123.jpg"><span class="actual_persona_name">figment &amp; co</span>';
+		expect(extractFromPage(html)).toEqual({ name: 'figment & co', url: 'https://avatars.steamstatic.com/abc123_full.jpg' });
+	});
+	it('ignores the error page and other hosts', () => {
+		expect(extractFromPage('<title>Steam Community :: Error</title>')).toEqual({});
+		expect(extractFromPage('<link rel="image_src" href="https://evil.example/a.jpg">')).toEqual({});
+	});
+});

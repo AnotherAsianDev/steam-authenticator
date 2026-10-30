@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.9.4
+- Nicknames for accounts whose Steam Community profile was never set up: Steam gives no profile data for them, so the app now reads the name and picture from the normal profile page as a second try. If that page has no picture either, Steam's default picture is used.
+
 ## 0.9.3
 - The ring around a code now empties in one smooth sweep instead of in one-second steps.
 - Trades: "Check account" is removed. It only repeated what the sign-in and the ban marks already show, and a trade ban still shows as a warning above the items.

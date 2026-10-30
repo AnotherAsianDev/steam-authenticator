@@ -39,6 +39,22 @@ export function extractPersonaName(xml: string): string | undefined {
 	return name || undefined;
 }
 
+const decodeHtml = (t: string): string => t.replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n))).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+/**
+ * A profile that was never set up has no XML (Steam says "could not be found"), but the normal profile page still shows the name.
+ * Name and picture are read from that page instead.
+ */
+export function extractFromPage(html: string): { name?: string; url?: string } {
+	const n = /<span class="actual_persona_name">([\s\S]*?)<\/span>/.exec(html)?.[1] ?? /<title>\s*Steam Community\s*::\s*([\s\S]*?)<\/title>/.exec(html)?.[1];
+	// eslint-disable-next-line no-control-regex
+	const name = n ? decodeHtml(n).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 64) : '';
+	const img = /<link rel="image_src" href="(https:\/\/[^"]+)"/.exec(html)?.[1];
+	let url: string | undefined;
+	if (img) url = extractAvatarUrl(`<avatarFull>${img.replace(/(_full)?\.jpg$/, '_full.jpg')}</avatarFull>`);
+	return { ...(name && name !== 'Error' ? { name } : {}), ...(url ? { url } : {}) };
+}
+
 export interface Bans {
 	/** A VAC ban is on record. */
 	vac: boolean;
@@ -260,7 +276,18 @@ export class AvatarCache {
 			const xml = await fetch(`${this.profileBase}/${steamId}/?xml=1`, { signal: AbortSignal.timeout(10_000) }).then((r) => r.text());
 			const before = this.profiles[steamId];
 			const next: Profile = { ...(before ?? { checked: 0 }), checked: Date.now() };
-			const name = extractPersonaName(xml);
+			let name = extractPersonaName(xml);
+			let pageUrl: string | undefined;
+			if (!name && !/<steamID64>/.test(xml)) {
+				try {
+					const html = await fetch(`${this.profileBase}/${steamId}`, { signal: AbortSignal.timeout(10_000) }).then((r) => r.text());
+					const page = extractFromPage(html);
+					name = page.name;
+					pageUrl = page.url;
+				} catch {
+					/* the page is only a second chance */
+				}
+			}
 			if (name) next.name = name;
 			const bans = this.apiMode ? undefined : extractBans(xml);
 			if (bans) next.bans = bans;
@@ -269,7 +296,7 @@ export class AvatarCache {
 			if (bans) this.noteNewBan(steamId, before?.bans, bans);
 			if (want.image) {
 				// Steam's default picture only for a profile Steam says does not exist, and never over a picture already saved.
-				const url = extractAvatarUrl(xml) ?? (/could not be found/i.test(xml) && !existsSync(this.file(steamId)) ? DEFAULT_AVATAR : undefined);
+				const url = extractAvatarUrl(xml) ?? pageUrl ?? (name && !existsSync(this.file(steamId)) ? DEFAULT_AVATAR : undefined) ?? (/could not be found/i.test(xml) && !existsSync(this.file(steamId)) ? DEFAULT_AVATAR : undefined);
 				if (!url) throw new Error('no avatar');
 				if (next.url !== url || !existsSync(this.file(steamId))) {
 					const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
