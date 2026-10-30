@@ -231,9 +231,6 @@ const ICONS: Record<string, string> = {
 	add: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
 	settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
 	log: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
-	'theme-system': '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
-	'theme-light': '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
-	'theme-dark': '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
 	vac: '<path d="M12 3 4 6v5c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6z"/><path d="m9.5 9.5 5 5m0-5-5 5"/>',
 	game: '<rect x="2.5" y="7" width="19" height="10" rx="5"/><path d="M7 10v4M5 12h4M15.5 11h.01M18 13h.01"/><path d="m4 4 16 16"/>',
 	community: '<path d="M4 5h16v11H9l-5 4z"/><path d="m9.5 8.5 5 4m0-4-5 4"/>',
@@ -312,11 +309,6 @@ function buildShell(): void {
 			item('log', 'Log', () => void navigate({ name: 'log' }), true),
 			item('settings', 'Settings', () => void navigate({ name: 'settings' })),
 			el('div', { class: 'mini-row' },
-				el('button', { class: 'mini theme', type: 'button', onclick: async () => {
-					const next = ({ system: 'light', light: 'dark', dark: 'system' } as const)[settings.theme];
-					const r = await api.setSettings({ theme: next });
-					if (r.ok) applySettings(r.value);
-				} }, el('span', { class: 'ico' })),
 				el('button', { class: 'mini collapse', type: 'button', onclick: async () => {
 					const r = await api.setSettings({ sidebarCollapsed: !settings.sidebarCollapsed });
 					if (r.ok) applySettings(r.value);
@@ -382,13 +374,6 @@ function applySettings(s: Settings): void {
 	if (s.theme === 'system') delete document.documentElement.dataset['theme'];
 	else document.documentElement.dataset['theme'] = s.theme;
 	document.body.classList.toggle('wide', s.layout !== 'list');
-	const th = document.querySelector<HTMLElement>('.mini.theme');
-	if (th) {
-		const label = { system: 'Theme: system', light: 'Theme: light', dark: 'Theme: dark' }[s.theme];
-		th.title = `${label}. Click to change`;
-		th.setAttribute('aria-label', th.title);
-		th.querySelector('.ico')!.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[`theme-${s.theme}`]}</svg>`;
-	}
 	document.querySelector('.shell')?.classList.toggle('collapsed', s.sidebarCollapsed);
 	const t = document.querySelector<HTMLElement>('.mini.collapse');
 	if (t) {
@@ -911,7 +896,7 @@ async function listScreen(): Promise<void> {
 				el('div', { class: 'kb-text' }, el('strong', { textContent: 'Add a Steam Web API key' }), el('span', { textContent: 'Without it community bans, game bans and ban dates are not checked, only VAC and trade bans.' })),
 				el('div', { class: 'row-actions' },
 					el('button', { class: 'small', type: 'button', textContent: 'Not now', onclick: () => { keyBanner.classList.add('leaving'); window.setTimeout(() => keyBanner.remove(), 200); void api.setSettings({ hideKeyHint: true }).then((s) => { if (s.ok) settings = s.value; }); } }),
-					el('button', { class: 'small primary', type: 'button', textContent: 'Add key', onclick: () => { void navigate({ name: 'settings' }).then(() => document.querySelector<HTMLElement>('.key-row input')?.focus()); } })));
+					el('button', { class: 'small primary', type: 'button', textContent: 'Add key', onclick: () => { settingsTab = 'bans'; void navigate({ name: 'settings' }).then(() => document.querySelector<HTMLElement>('.key-row input')?.focus()); } })));
 		});
 	}
 	show(header, strip.node, el('main', {}, keyBanner, overview, filterBar, list, none, empty));
@@ -2096,6 +2081,7 @@ function apiKeyRow(): HTMLElement {
 		status);
 }
 
+let settingsTab = 'general';
 async function settingsScreen(): Promise<void> {
 	const s = settings;
 	const healthBox = el('div', { class: 'health-box' });
@@ -2162,25 +2148,35 @@ async function settingsScreen(): Promise<void> {
 		...s.importFolders.map((f) => el('li', {}, el('span', { class: 'path', title: f, textContent: f }), el('button', { class: 'icon', title: 'Remove folder', ariaLabel: `Remove ${f}`, textContent: '✕', onclick: () => void set({ importFolders: s.importFolders.filter((x) => x !== f) }) })))
 	);
 
-	show(
-		backHeader('Settings'),
-		el(
-			'main',
-			{ class: 'settings' },
-			el('h2', { textContent: 'Appearance' }),
-			row('Theme', '', select(s.theme, [['system', 'System'], ['dark', 'Dark'], ['light', 'Light']], (v) => void set({ theme: v }), 'Theme')),
-			row('Watch for bans', 'VAC and trade bans, read from the same public profile page as the name and picture (about every 12 hours per account, no extra request). A new ban is reported as soon as it is seen', toggle(s.checkBans, (v) => void set({ checkBans: v }), 'Watch for bans')),
+	const tabDefs: [string, string][] = [['general', 'General'], ['bans', 'Bans'], ['confirmations', 'Confirmations'], ['security', 'Security'], ['import', 'Import and updates'], ['about', 'Health and about']];
+	const pages: Record<string, HTMLElement[]> = {
+		general: [
+			row('Theme', 'System follows your Windows setting', el('span', { class: 'seg-group text' }, ...(['system', 'light', 'dark'] as const).map((t) =>
+				el('button', { class: `seg${s.theme === t ? ' on' : ''}`, type: 'button', textContent: { system: 'System', light: 'Light', dark: 'Dark' }[t], onclick: () => void set({ theme: t }) })))),
 			row('Show Steam nickname', 'Instead of the login name, which then appears under it. Taken from the public profile', toggle(s.showNickname, (v) => void set({ showNickname: v }), 'Show Steam nickname')),
 			row('Show SteamID64', 'Under each account name', toggle(s.showSteamId, (v) => void set({ showSteamId: v }), 'Show SteamID64')),
 			row('Show profile pictures', 'Fetched from the public profile, at most once a week per account', toggle(s.showAvatars, (v) => void set({ showAvatars: v }), 'Show profile pictures')),
+		],
+		bans: [
+			row('Watch for bans', 'VAC and trade bans, read from the same public profile page as the name and picture (about every 12 hours per account, no extra request). A new ban is reported as soon as it is seen', toggle(s.checkBans, (v) => void set({ checkBans: v }), 'Watch for bans')),
 			apiKeyRow(),
-			el('h2', { textContent: 'Confirmations' }),
+		],
+		confirmations: [
 			row('Check when the app starts', 'One round, one account at a time', toggle(s.checkOnStartup, (v) => void set({ checkOnStartup: v }), 'Check when the app starts')),
 			row('Check repeatedly', 'Off is safest. Steam rate-limits frequent checks', select(s.autoCheckSeconds, [[0, 'Never, only with the button'], [300, 'Every 5 minutes'], [900, 'Every 15 minutes'], [1800, 'Every 30 minutes']], (v) => void set({ autoCheckSeconds: v }), 'Check interval')),
-			el('h2', { textContent: 'Clipboard' }),
-			row('Clear after copying', 'Codes and secrets', select(s.clipboardClearSeconds, [[0, 'Never'], [15, '15 seconds'], [30, '30 seconds'], [60, '1 minute']], (v) => void set({ clipboardClearSeconds: v }), 'Clear clipboard')),
-			el('h2', { textContent: 'Security' }),
+		],
+		security: [
 			...securityRows(),
+			row('Clear after copying', 'Codes and secrets', select(s.clipboardClearSeconds, [[0, 'Never'], [15, '15 seconds'], [30, '30 seconds'], [60, '1 minute']], (v) => void set({ clipboardClearSeconds: v }), 'Clear clipboard')),
+		],
+		import: [
+			row('Check for updates', 'Asks GitHub each time the app starts if a newer release exists and tells you. Nothing is downloaded or installed', el('div', { class: 'row-actions left' },
+				el('button', { class: 'small', type: 'button', textContent: 'Check now', onclick: async () => { const found = await checkForUpdate(true); if (!found) toast('You have the latest version'); } }),
+				toggle(s.checkUpdates, (v) => void set({ checkUpdates: v }), 'Check for updates')),),
+			row('Find SDA folders automatically', 'Looks for folders named maFiles in Downloads, Desktop and Documents when the app starts', toggle(s.autoDetect, (v) => void set({ autoDetect: v }), 'Find SDA folders automatically')),
+			el('div', { class: 'setting stack' }, el('span', { class: 'setting-label', textContent: 'Watched folders' }), s.importFolders.length ? folders : el('span', { class: 'hint', textContent: 'None added.' }), el('div', { class: 'row-actions left' }, el('button', { class: 'small', textContent: 'Add folder…', onclick: async () => { const r = await api.addFolder(); if (r.ok) { applySettings(r.value); void settingsScreen(); } else toast(r.error, true); } }), el('button', { class: 'small', textContent: 'Scan now', onclick: async () => { const r = await api.rescan(); if (!r.ok) return toast(r.error, true); toast(r.value.added.length ? `Imported ${r.value.added.join(', ')}` : 'Nothing new found'); } }))),
+		],
+		about: [
 			el('h2', { textContent: 'Health check' }),
 			el('div', { class: 'setting stack' },
 				el('span', { class: 'hint', textContent: 'Checks every account on this PC: secrets valid, sign-in state, saved password, revocation code, and how far your clock is from Steam. Only the time is asked from Steam.' }),
@@ -2198,17 +2194,18 @@ async function settingsScreen(): Promise<void> {
 							...(x.issues.length ? x.issues.map((t) => el('span', { class: 'hint', textContent: t })) : [el('span', { class: 'hint', textContent: 'Everything in order' })]))));
 				} })),
 				healthBox),
-			el('h2', { textContent: 'Importing' }),
-			row('Check for updates', 'Asks GitHub each time the app starts if a newer release exists and tells you. Nothing is downloaded or installed', el('div', { class: 'row-actions left' },
-				el('button', { class: 'small', type: 'button', textContent: 'Check now', onclick: async () => { const found = await checkForUpdate(true); if (!found) toast('You have the latest version'); } }),
-				toggle(s.checkUpdates, (v) => void set({ checkUpdates: v }), 'Check for updates')),),
-			row('Find SDA folders automatically', 'Looks for folders named maFiles in Downloads, Desktop and Documents when the app starts', toggle(s.autoDetect, (v) => void set({ autoDetect: v }), 'Find SDA folders automatically')),
-			el('div', { class: 'setting stack' }, el('span', { class: 'setting-label', textContent: 'Watched folders' }), s.importFolders.length ? folders : el('span', { class: 'hint', textContent: 'None added.' }), el('div', { class: 'row-actions left' }, el('button', { class: 'small', textContent: 'Add folder…', onclick: async () => { const r = await api.addFolder(); if (r.ok) { applySettings(r.value); void settingsScreen(); } else toast(r.error, true); } }), el('button', { class: 'small', textContent: 'Scan now', onclick: async () => { const r = await api.rescan(); if (!r.ok) return toast(r.error, true); toast(r.value.added.length ? `Imported ${r.value.added.join(', ')}` : 'Nothing new found'); } }))),
+
 			el('p', { class: 'hint fine', id: 'ver' }),
 			el('p', { class: 'hint fine', textContent: 'New accounts are copied; existing ones are never overwritten and your originals are never changed. Passwords you choose to save, and the sign-in token, are kept next to your maFiles (credentials.json and sessions.json), in plain text unless you set a master password under Security.' }),
 			el('div', { class: 'about' }, logo(44), el('div', {}, el('strong', { textContent: 'Authenticator' }), el('p', { class: 'hint', textContent: '© 2026 github.com/AnotherAsianDev. MIT License.' }), el('p', { class: 'hint fine', textContent: 'Not affiliated with or endorsed by Valve. Steam is a trademark of Valve Corporation.' })))
-		)
-	);
+		]
+	};
+	const tabBar = el('div', { class: 'tabs', role: 'tablist' }, ...tabDefs.map(([id, label]) =>
+		el('button', { class: `tab${settingsTab === id ? ' on' : ''}`, type: 'button', role: 'tab', ariaSelected: String(settingsTab === id), textContent: label, onclick: () => { settingsTab = id; void settingsScreen(); } })));
+	const redraw = !!content.querySelector('.settings');
+	const scroll = content.scrollTop;
+	show(backHeader('Settings'), el('main', { class: 'settings' }, tabBar, el('div', { class: 'tab-page' }, ...pages[settingsTab]!)));
+	if (redraw) { content.classList.remove('enter'); content.scrollTop = scroll; }
 	void api.version().then((v) => { const n = document.getElementById('ver'); if (n && v.ok) n.textContent = `Version ${v.value}. To update, drop the new folder over this one and choose Replace. Your maFiles and data stay.`; });
 	refreshView = () => undefined;
 }

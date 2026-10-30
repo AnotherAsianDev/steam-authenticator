@@ -510,3 +510,12 @@ button:active:not(:disabled) { transform: scale(.97); }
 .row { transition: border-color .15s, background-color .25s, transform .15s, box-shadow .15s; }
 .row:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,.14); }
 .ctx-item { transition: background-color .1s; }
+
+/* ------------------------------------------------------------ settings tabs -- */
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; margin-bottom: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.tab { padding: 6px 12px; border-radius: 8px; font-size: 13px; color: var(--muted); }
+.tab:hover { color: var(--text); background: var(--raised); }
+.tab.on { color: var(--text); background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
+.tab-page { animation: rise .22s cubic-bezier(.2,.7,.2,1); }
+.seg-group.text { margin-left: 0; }
+.seg-group.text .seg { font-size: 13px; padding: 6px 14px; }

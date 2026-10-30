@@ -6,6 +6,10 @@ A lean desktop Steam Guard authenticator for Windows. Plain maFiles next to the 
 
 <table>
 <tr>
+<td width="50%"><img src="docs/screenshots/grid.png" alt="Grid layout"><br><sub>List, columns or grid layout, with an icon per ban type</sub></td>
+<td width="50%"><img src="docs/screenshots/settings.png" alt="Settings"><br><sub>Settings in tabs: theme, bans and API key, security, import</sub></td>
+</tr>
+<tr>
 <td width="50%"><img src="docs/screenshots/confirmations.png" alt="Confirmations"><br><sub>Confirmations across all accounts, grouped and filterable</sub></td>
 <td width="50%"><img src="docs/screenshots/account.png" alt="Account page"><br><sub>Account page: copy fields, open Steam signed in</sub></td>
 </tr>
@@ -42,7 +46,7 @@ Minimal desktop Steam Guard authenticator (Electron + TypeScript, no UI framewor
   A refresh token is kept in `sessions.json` (plain text).
 - **Copy** username, password (if saved), shared secret, identity secret, revocation code, SteamID64.
 - **Profile pictures** from the public profile (no API key), at most once a week per account.
-- **Settings:** theme (system, light or dark; quick switch in the menu), show SteamID64, pictures, check on startup / optional interval, clipboard clearing, import folders.
+- **Settings:** in tabs: theme (system, light or dark), nickname, SteamID64, pictures, ban watching and the optional API key, check on startup / optional interval, clipboard clearing, master password and PIN, updates, import folders, health check.
 
     npm install      (PowerShell: npm.cmd install)
     npm test
