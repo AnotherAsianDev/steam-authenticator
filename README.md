@@ -54,7 +54,7 @@ Minimal desktop Steam Guard authenticator (Electron + TypeScript, no UI framewor
   A refresh token is kept in `sessions.json` (plain text).
 - **Copy** username, password (if saved), shared secret, identity secret, revocation code, SteamID64.
 - **Profile pictures** from the public profile (no API key), at most once a week per account.
-- **Trades tab, check:** one button tells whether an account can trade right now (session, trade link, bans, limits, new authenticator).
+- **Trades tab, check:** one button tells whether an account can trade right now (session, trade link, bans).
 - **Trades tab, open offers:** see offers that nobody accepted yet, per account or all at once, and cancel them.
 - **Trades tab, overview:** how many tradable and locked items every account holds in a game, with a total.
 - **Backup:** one encrypted file with all maFiles, saved passwords, notes and tags (Settings, Import and updates). Restoring only adds missing accounts.

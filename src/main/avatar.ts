@@ -65,12 +65,6 @@ export function extractBans(xml: string): Bans | undefined {
 }
 
 /** Short texts for what is wrong with an account on Steam's side (empty when nothing is). */
-/** Whether the profile page says the account is limited. Undefined when the page does not say. */
-export function extractLimited(xml: string): boolean | undefined {
-	const v = /<isLimitedAccount>\s*([01])\s*<\/isLimitedAccount>/.exec(xml)?.[1];
-	return v === undefined ? undefined : v === '1';
-}
-
 export function banLabels(b: Bans | undefined): string[] {
 	if (!b) return [];
 	const n = (count: number | undefined, label: string): string => ((count ?? 0) > 1 ? `${label} ×${count}` : label);
@@ -92,8 +86,6 @@ interface Profile {
 	/** When the profile page was last read. */
 	checked: number;
 	bans?: Bans;
-	/** Steam marks the account as limited (under $5 spent). Read from the profile page in every mode. */
-	limited?: boolean;
 	/** What changed about the bans and when, newest last. */
 	events?: { at: number; what: string }[];
 }
@@ -130,7 +122,6 @@ export class AvatarCache {
 					...(typeof p.name === 'string' ? { name: p.name } : {}),
 					...(typeof p.url === 'string' ? { url: p.url } : {}),
 					checked: typeof p.checked === 'number' ? p.checked : 0,
-					...(typeof p.limited === 'boolean' ? { limited: p.limited } : {}),
 					...(Array.isArray(p.events) ? { events: p.events.filter((e) => typeof e?.at === 'number' && typeof e?.what === 'string').slice(-EVENTS_MAX) } : {}),
 					...(b && typeof b.vac === 'boolean' && typeof b.trade === 'string' ? { bans: { vac: b.vac, trade: b.trade, limited: b.limited === true, ...(typeof b.vacCount === 'number' ? { vacCount: b.vacCount } : {}), ...(typeof b.gameBans === 'number' ? { gameBans: b.gameBans } : {}), ...(typeof b.community === 'boolean' ? { community: b.community } : {}), ...(typeof b.daysSince === 'number' ? { daysSince: b.daysSince } : {}), ...(b.api ? { api: true as const } : {}) } } : {})
 				};
@@ -216,12 +207,6 @@ export class AvatarCache {
 		return this.profiles[steamId]?.events ?? [];
 	}
 
-	/** True when the last profile read said the account is limited. */
-	limited(steamId: string): boolean {
-		const p = this.profiles[steamId];
-		return p?.limited ?? p?.bans?.limited ?? false;
-	}
-
 	/** Ban state as of the last time the profile was read. */
 	bans(steamId: string): Bans | undefined {
 		return this.profiles[steamId]?.bans;
@@ -279,13 +264,13 @@ export class AvatarCache {
 			if (name) next.name = name;
 			const bans = this.apiMode ? undefined : extractBans(xml);
 			if (bans) next.bans = bans;
-			const limited = extractLimited(xml);
-			if (limited !== undefined) next.limited = limited;
-			let changed = name !== before?.name || JSON.stringify(bans) !== JSON.stringify(before?.bans) || limited !== before?.limited;
+			let changed = name !== before?.name || JSON.stringify(bans) !== JSON.stringify(before?.bans);
 			this.profiles[steamId] = next;
 			if (bans) this.noteNewBan(steamId, before?.bans, bans);
 			if (want.image) {
-				const url = extractAvatarUrl(xml) ?? DEFAULT_AVATAR;
+				// Steam's default picture only for a profile Steam says does not exist, and never over a picture already saved.
+				const url = extractAvatarUrl(xml) ?? (/could not be found/i.test(xml) && !existsSync(this.file(steamId)) ? DEFAULT_AVATAR : undefined);
+				if (!url) throw new Error('no avatar');
 				if (next.url !== url || !existsSync(this.file(steamId))) {
 					const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
 					const buf = Buffer.from(await res.arrayBuffer());

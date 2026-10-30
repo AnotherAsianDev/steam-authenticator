@@ -124,23 +124,6 @@ function str(v: unknown, what = 'value'): string {
 	if (typeof v !== 'string' || v.length === 0 || v.length > 4096) throw new UserError(`Invalid ${what}`);
 	return v;
 }
-/** Why Steam may refuse trades or the market for this account, as far as the profile page and the maFile tell. */
-/** Steam holds trades for up to 15 days while the authenticator is under 7 days old, and may block trading outright until 15 days if the account had no Steam Guard before. */
-const NEW_AUTHENTICATOR_DAYS = 15;
-function restrictions(steamId: string): string[] {
-	const out: string[] = [];
-	if (avatars.limited(steamId)) out.push('Limited account (under $5 spent): no Community Market, and Steam Community items (cards, emoticons, backgrounds) cannot be traded out. Game items like CS2 can be traded normally');
-	const age = accounts.authenticatorDays(steamId);
-	if (age !== undefined && age < NEW_AUTHENTICATOR_DAYS) {
-		const when = age === 0 ? 'today' : `${age} day${age === 1 ? '' : 's'} ago`;
-		out.push(
-			age < 7
-				? `The authenticator was added ${when}: in its first 7 days Steam can hold trades and market listings for up to 15 days. CS2 items are not held, but if this account had no Steam Guard before, Steam may block trading and the market (CS2 too) until day 15`
-				: `The authenticator was added ${when}: if this account had no Steam Guard before, Steam may still block trading and the market (CS2 too) until day 15`
-		);
-	}
-	return out;
-}
 function known(steamId: unknown): string {
 	const id = str(steamId, 'account');
 	if (!accounts.get(id)) throw new UserError('Unknown account');
@@ -321,7 +304,6 @@ function registerIpc(): void {
 				bans: watchBans ? banLabels(avatars.bans(steamId)) : [],
 				tags: meta.get(steamId).tags,
 				skipBulk: meta.get(steamId).skipBulk,
-				restrictions: restrictions(steamId),
 				sessionDays: accounts.sessionDaysLeft(steamId) ?? null,
 				hasPassword: accounts.hasPassword(steamId),
 				state: st.state,
@@ -355,7 +337,7 @@ function registerIpc(): void {
 	});
 	handle('detail', (steamId: unknown) => {
 		const a = accounts.get(known(steamId))!;
-		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note, tags: meta.get(a.steamId).tags, bans: banLabels(avatars.bans(a.steamId)), banNote: banNote(avatars.bans(a.steamId)), banHistory: avatars.history(a.steamId), restrictions: restrictions(a.steamId), sessionDays: accounts.sessionDaysLeft(a.steamId) ?? null };
+		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note, tags: meta.get(a.steamId).tags, bans: banLabels(avatars.bans(a.steamId)), banNote: banNote(avatars.bans(a.steamId)), banHistory: avatars.history(a.steamId), sessionDays: accounts.sessionDaysLeft(a.steamId) ?? null };
 	});
 	handle('apiKeyState', () => apiKeyState());
 	handle('apiKeySet', async (key: unknown) => {
@@ -532,7 +514,6 @@ function registerIpc(): void {
 			}
 		}
 		for (const b of banLabels(avatars.bans(id))) lines.push({ level: b.startsWith('Trade') ? 'bad' : 'warn', text: b.startsWith('Trade') ? `${b}: Steam blocks or limits trading` : b });
-		for (const r of restrictions(id)) lines.push({ level: 'warn', text: r });
 		if (!lines.some((l) => l.level !== 'ok')) lines.push({ level: 'ok', text: 'No ban, limit or new authenticator known' });
 		return lines;
 	});

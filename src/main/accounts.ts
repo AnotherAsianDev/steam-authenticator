@@ -72,12 +72,6 @@ export class Accounts {
 	ids(): string[] {
 		return [...this.parsed.keys()];
 	}
-	/** Whole days since the authenticator was added, when the maFile says. */
-	authenticatorDays(steamId: string): number | undefined {
-		const t = this.parsed.get(steamId)?.serverTime;
-		return t ? Math.max(0, Math.floor((this.d.steamNow() - t) / 86400)) : undefined;
-	}
-
 	get(steamId: string): ParsedMaFile | undefined {
 		return this.parsed.get(steamId);
 	}
