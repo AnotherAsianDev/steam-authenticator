@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.5
+- Trades: reading another account's trade link from Steam is removed, because Steam does not hand it out reliably. Items are sent to a trade link you paste, or to one you saved (the saved links stay, with Save as and Remove). The "Your accounts" entries in the Send to lists are gone from both the single and the several-accounts screen.
+- Cleanup: removed the code and styles left over from the removed trade-link lookup, the old Check account and earlier layouts.
+
 ## 0.9.4
 - Nicknames for accounts whose Steam Community profile was never set up: Steam gives no profile data for them, so the app now reads the name and picture from the normal profile page as a second try. If that page has no picture either, Steam's default picture is used.
 

@@ -142,7 +142,6 @@ declare const api: {
 	apiKeyRemove(): P<{ has: boolean; locked: boolean; hint: string }>;
 	apiKeyPage(): P<void>;
 	tradeInventory(id: string, game: string): P<{ items: TradeItem[]; untradable: number; locked: { name: string; icon: string; color: string; count: number; until: number | null }[]; cut: boolean }>;
-	tradeResolve(account: string): P<string>;
 	tradeLinks(): P<{ name: string; link: string }[]>;
 	tradeLinkSave(name: string, link: string): P<{ name: string; link: string }[]>;
 	tradeLinkRemove(link: string): P<{ name: string; link: string }[]>;
@@ -2318,7 +2317,6 @@ async function tradesScreen(wanted?: string): Promise<void> {
 	const id = [wanted, tradeSource].find((x) => x && acc.value.some((a) => a.steamId === x)) ?? acc.value[0]!.steamId;
 	tradeSource = id;
 	const me = acc.value.find((a) => a.steamId === id)!;
-	const others = acc.value.filter((a) => a.steamId !== id);
 	let savedLinks = links.ok ? links.value : [];
 	let game = 'cs2';
 	let items: TradeItem[] = [];
@@ -2367,7 +2365,6 @@ async function tradesScreen(wanted?: string): Promise<void> {
 		};
 		targetSel.replaceChildren(
 			el('option', { value: '', textContent: 'Choose where to send…' }),
-			...group('Your accounts', others.map((a) => el('option', { value: `a:${a.steamId}`, textContent: accountLabel(a.name, a.nickname) }))),
 			...group('Saved trade links', savedLinks.map((l) => el('option', { value: `l:${l.link}`, textContent: l.name }))),
 			el('option', { value: 'paste', textContent: 'Another trade link…' })
 		);
@@ -2439,9 +2436,8 @@ async function tradesScreen(wanted?: string): Promise<void> {
 	function chosen(): string[] {
 		return items.filter((i) => picked.has(i.assetId)).map((i) => i.assetId);
 	}
-	function targetParam(): { account?: string; link?: string } | undefined {
+	function targetParam(): { link: string } | undefined {
 		const v = targetSel.value;
-		if (v.startsWith('a:')) return { account: v.slice(2) };
 		if (v.startsWith('l:')) return { link: v.slice(2) };
 		if (v === 'paste' && linkInput.value.trim()) return { link: linkInput.value.trim() };
 		return undefined;
@@ -2672,7 +2668,7 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 	let preview: Map<string, { assets: string[]; locked: number; error: string }> | undefined;
 
 	const gameSel = el('select', { ariaLabel: 'Game' }, ...GAME_CHOICES.map(([k, name]) => el('option', { value: k, textContent: name })));
-	const targetSel = el('select', { ariaLabel: 'Receiving account' });
+	const targetSel = el('select', { ariaLabel: 'Send to' });
 	const linkInput = el('input', { type: 'text', class: 'search', placeholder: 'https://steamcommunity.com/tradeoffer/new/?partner=…&token=…', ariaLabel: 'Trade link', spellcheck: false, hidden: true });
 	const list = el('div', { class: 'bulk-list' });
 	const status = el('p', { class: 'hint', textContent: '' });
@@ -2692,8 +2688,7 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 			return [g];
 		};
 		targetSel.replaceChildren(
-			el('option', { value: '', textContent: 'Choose the receiving account…' }),
-			...group('Your accounts', all.map((a) => el('option', { value: `a:${a.steamId}`, textContent: accountLabel(a.name, a.nickname) }))),
+			el('option', { value: '', textContent: 'Choose where to send…' }),
 			...group('Saved trade links', saved.map((l) => el('option', { value: `l:${l.link}`, textContent: l.name }))),
 			el('option', { value: 'paste', textContent: 'Another trade link…' })
 		);
@@ -2703,7 +2698,6 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 	}
 	let listFilter = '';
 	let tagFilter = '';
-	const receiverId = (): string => (targetValue().startsWith('a:') ? targetValue().slice(2) : '');
 	const shownAccounts = (): Row[] => {
 		const q = listFilter.trim().toLowerCase();
 		return all.filter((a) => (!q || `${a.name} ${a.nickname ?? ''} ${a.note}`.toLowerCase().includes(q)) && (!tagFilter || a.tags.includes(tagFilter)));
@@ -2720,7 +2714,7 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 	}
 	const pickAll = (on: boolean): void => {
 		if (busy) return;
-		for (const a of shownAccounts()) if (a.steamId !== receiverId() && !(on && a.skipBulk)) { if (on) sources.add(a.steamId); else sources.delete(a.steamId); }
+		for (const a of shownAccounts()) if (!(on && a.skipBulk)) { if (on) sources.add(a.steamId); else sources.delete(a.steamId); }
 		invalidate();
 		drawList();
 	};
@@ -2729,12 +2723,11 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 		el('button', { class: 'small', type: 'button', textContent: 'None', onclick: () => pickAll(false) }),
 		counter);
 	function drawList(): void {
-		const receiver = receiverId();
 		const left = all.filter((a) => a.skipBulk).length;
 		counter.textContent = `${sources.size} of ${all.length} selected${left ? ` · ${left} left out of select all` : ''}`;
 		const shown = shownAccounts();
 		list.replaceChildren(...(shown.length ? shown.map((a) => {
-			const box = el('input', { type: 'checkbox', checked: sources.has(a.steamId), disabled: a.steamId === receiver || busy, ariaLabel: `Send from ${accountLabel(a.name, a.nickname)}` });
+			const box = el('input', { type: 'checkbox', checked: sources.has(a.steamId), disabled: busy, ariaLabel: `Send from ${accountLabel(a.name, a.nickname)}` });
 			box.addEventListener('change', () => { if (box.checked) sources.add(a.steamId); else sources.delete(a.steamId); invalidate(); drawList(); });
 			const skip = el('button', { class: `skip${a.skipBulk ? ' on' : ''}`, type: 'button', title: a.skipBulk ? 'Left out of "Select all shown". Click to include again' : 'Leave out of "Select all shown"', ariaLabel: a.skipBulk ? `Include ${a.name} in Select all again` : `Leave ${a.name} out of Select all`, disabled: busy });
 			skip.innerHTML = svgIcon('ban', 12);
@@ -2746,7 +2739,7 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 				if (a.skipBulk && sources.delete(a.steamId)) invalidate();
 				drawList();
 			});
-			return el('label', { class: `bulk-acc${a.steamId === receiver ? ' off' : ''}${a.skipBulk ? ' skipped' : ''}`, title: a.note || '' }, box, el('span', { textContent: accountLabel(a.name, a.nickname) }), ...(a.steamId === receiver ? [el('small', { class: 'hint', textContent: 'receives' })] : []), ...(tradeNotes(a).length ? [Object.assign(el('span', { class: 'restricted', title: tradeNotes(a).join('. '), textContent: '!' }), { ariaLabel: tradeNotes(a).join('. ') })] : []), skip);
+			return el('label', { class: `bulk-acc${a.skipBulk ? ' skipped' : ''}`, title: a.note || '' }, box, el('span', { textContent: accountLabel(a.name, a.nickname) }), ...(tradeNotes(a).length ? [Object.assign(el('span', { class: 'restricted', title: tradeNotes(a).join('. '), textContent: '!' }), { ariaLabel: tradeNotes(a).join('. ') })] : []), skip);
 		}) : [el('p', { class: 'hint', textContent: 'No account matches.' })]));
 	}
 	function invalidate(): void {
@@ -2757,15 +2750,14 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 		status.textContent = '';
 		previewBtn.disabled = sources.size === 0 || !targetParam();
 	}
-	function targetParam(): { account?: string; link?: string } | undefined {
+	function targetParam(): { link: string } | undefined {
 		const v = targetValue();
-		if (v.startsWith('a:')) return { account: v.slice(2) };
 		if (v.startsWith('l:')) return { link: v.slice(2) };
 		if (v === 'paste' && linkInput.value.trim()) return { link: linkInput.value.trim() };
 		return undefined;
 	}
 	gameSel.addEventListener('change', () => { game = gameSel.value; invalidate(); });
-	targetSel.addEventListener('change', () => { linkInput.hidden = targetSel.value !== 'paste'; if (targetSel.value.startsWith('a:')) sources.delete(targetSel.value.slice(2)); invalidate(); drawList(); });
+	targetSel.addEventListener('change', () => { linkInput.hidden = targetSel.value !== 'paste'; invalidate(); drawList(); });
 	linkInput.addEventListener('input', invalidate);
 
 	const rowsOf = (): [string, { assets: string[]; locked: number; error: string }][] => [...(preview ?? new Map<string, { assets: string[]; locked: number; error: string }>()).entries()].sort((x, y) => y[1].assets.length - x[1].assets.length);
@@ -2830,21 +2822,7 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 			drawList();
 			stop.textContent = 'Cancel after this account';
 			const state = new Map<string, string>();
-			let link: { link: string } | undefined;
-			try {
-				if (t.account) {
-					const r = await api.tradeResolve(t.account);
-					if (!r.ok) throw new Error(r.error);
-					link = { link: r.value };
-				} else link = { link: t.link! };
-			} catch (err) {
-				status.textContent = (err as Error).message;
-				busy = false;
-				previewBtn.disabled = false;
-				drawList();
-				word.disabled = false;
-				return;
-			}
+			const link = { link: t.link };
 			for (const [n, [id, p]] of ready.entries()) {
 				if (cancelled || !alive()) { state.set(id, 'not sent'); continue; }
 				state.set(id, 'sending…');
@@ -2884,10 +2862,10 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 	show(
 		tradesHeader(),
 		el('main', { class: 'send' },
-			el('p', { class: 'hint', textContent: 'Tick the accounts to send from, choose the game and who receives. Every tradeable item of that game is sent. You see the full list before anything leaves.' }),
+			el('p', { class: 'hint', textContent: 'Tick the accounts to send from, choose the game and the trade link that receives. Every tradeable item of that game is sent. You see the full list before anything leaves.' }),
 			listBar,
 			list,
-			el('div', { class: 'send-bar' }, field('Game', gameSel), field('Receiver', targetSel), previewBtn),
+			el('div', { class: 'send-bar' }, field('Game', gameSel), field('Send to', targetSel), previewBtn),
 			linkInput,
 			status,
 			table,

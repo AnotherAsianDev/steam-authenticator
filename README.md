@@ -10,7 +10,7 @@ A lean desktop Steam Guard authenticator for Windows. Plain maFiles next to the 
 <td width="50%"><img src="docs/screenshots/settings.png" alt="Settings"><br><sub>Settings in tabs: theme, bans and API key, security, import</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/screenshots/send.png" alt="Send items"><br><sub>Trades tab: send tradeable items to another account or a trade link</sub></td>
+<td width="50%"><img src="docs/screenshots/send.png" alt="Send items"><br><sub>Trades tab: send tradeable items to a saved or pasted trade link</sub></td>
 <td width="50%"><img src="docs/screenshots/bulk.png" alt="Bulk send"><br><sub>Bulk: several accounts to one, with a preview before anything is sent</sub></td>
 </tr>
 <tr>

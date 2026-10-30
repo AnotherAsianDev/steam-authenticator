@@ -11,7 +11,7 @@ import { findMaFileFolders, importFolder, normalizeStoreFolder, readMaFile } fro
 import { CredentialStore } from './credentials';
 import { FolderWatcher } from './watcher';
 import { clockOffset, steamNow, syncClock } from './clock';
-import { GAMES, accountIdOf, chunk, fetchHttp, cancelOffer, fetchInventory, fetchOpenOffers, fetchOwnTradeLink, parseTradeLink, sendOffer, type TradeLink } from './trade';
+import { GAMES, accountIdOf, chunk, fetchHttp, cancelOffer, fetchInventory, fetchOpenOffers, parseTradeLink, sendOffer } from './trade';
 import { sessionCookie } from './sessions';
 import { openBackup, sealBackup, type BackupAccount } from './backup';
 import { ConfirmationsClient, fetchTransport, type Action } from './confirmations';
@@ -482,12 +482,6 @@ function registerIpc(): void {
 		const id = known(steamId);
 		return fetchInventory(fetchHttp, id, gameOf(game), await cookieOf(id));
 	});
-	handle('tradeResolve', async (account: unknown) => {
-		const other = known(account);
-		const found = await fetchOwnTradeLink(fetchHttp, other, await cookieOf(other));
-		if (!found) throw new UserError(`Steam would not show the trade link of ${accounts.get(other)!.accountName} to this app. Paste that account's trade link instead (Steam: Inventory > Trade offers > Who can send me trade offers)`);
-		return `https://steamcommunity.com/tradeoffer/new/?partner=${accountIdOf(found.steamId)}&token=${found.token}`;
-	});
 	handle('tradeOffers', async (steamId: unknown) => fetchOpenOffers(fetchHttp, await accounts.webToken(known(steamId))));
 	handle('tradeCancel', async (steamId: unknown, offerId: unknown) => {
 		const id = known(steamId);
@@ -507,21 +501,9 @@ function registerIpc(): void {
 		const id = known(steamId);
 		const g = gameOf(game);
 		if (!Array.isArray(assetIds) || assetIds.length === 0 || assetIds.length > 5000 || !assetIds.every((x) => typeof x === 'string')) throw new UserError('Nothing selected');
-		const t = (target ?? {}) as { account?: unknown; link?: unknown };
-		let to: TradeLink;
-		let toName: string;
-		if (typeof t.account === 'string') {
-			const other = known(t.account);
-			if (other === id) throw new UserError('Choose a different account to receive the items');
-			const found = await fetchOwnTradeLink(fetchHttp, other, await cookieOf(other));
-			if (!found) throw new UserError(`Steam would not show the trade link of ${accounts.get(other)!.accountName} to this app. Paste that account's trade link instead (Steam: Inventory > Trade offers > Who can send me trade offers)`);
-			to = found;
-			toName = accounts.get(other)!.accountName;
-		} else {
-			to = parseTradeLink(str(t.link, 'trade link'));
-			if (to.steamId === id) throw new UserError('That trade link belongs to the sending account');
-			toName = `…${accountIdOf(to.steamId)}`;
-		}
+		const to = parseTradeLink(str((target as { link?: unknown } | null)?.link, 'trade link'));
+		if (to.steamId === id) throw new UserError('That trade link belongs to the sending account');
+		const toName = `…${accountIdOf(to.steamId)}`;
 		// Check against Steam's current inventory, never against what the screen believed.
 		const inv = await fetchInventory(fetchHttp, id, g, await cookieOf(id));
 		const wanted = new Set(assetIds as string[]);

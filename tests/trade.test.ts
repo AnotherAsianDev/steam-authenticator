@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GAMES, accountIdOf, chunk, fetchInventory, fetchOwnTradeLink, parseInventory, parseOpenOffers, parseTradeLink, unlockTime, sendOffer, type Http, type Item } from '../src/main/trade';
+import { GAMES, accountIdOf, chunk, fetchInventory, parseInventory, parseOpenOffers, parseTradeLink, unlockTime, sendOffer, type Http, type Item } from '../src/main/trade';
 
 const LINK = 'https://steamcommunity.com/tradeoffer/new/?partner=1039734271&token=AbCd_-12';
 const item = (n: number): Item => ({ assetId: String(n), group: 'g', name: 'Case', type: 'Container', icon: 'x', color: '', amount: 1 });
@@ -98,12 +98,6 @@ describe('sending', () => {
 		const http: Http = async () => ({ status: 200, text: JSON.stringify({ strError: 'There was an error sending your trade offer.  Please try again later. (26)' }) });
 		await expect(sendOffer(http, 'c', parseTradeLink(LINK), GAMES[0]!, [item(1)])).rejects.toThrow(/\(26\)/);
 	});
-	it('reads an account\'s own trade link', async () => {
-		const html = `<input value="https://steamcommunity.com/tradeoffer/new/?partner=1039734271&amp;token=AbCd_-12">`;
-		const l = await fetchOwnTradeLink(async () => ({ status: 200, text: html }), '76561198999999999', 'c');
-		expect(l?.token).toBe('AbCd_-12');
-		expect(await fetchOwnTradeLink(async () => ({ status: 200, text: '<html></html>' }), '76561198999999999', 'c')).toBeUndefined();
-	});
 });
 
 describe('parseOpenOffers', () => {
@@ -123,23 +117,5 @@ describe('parseOpenOffers', () => {
 	it('copes with nothing', () => {
 		expect(parseOpenOffers({ response: {} })).toEqual([]);
 		expect(parseOpenOffers(null)).toEqual([]);
-	});
-});
-
-describe('own trade link behind a custom address', () => {
-	const page = '<input value="https://steamcommunity.com/tradeoffer/new/?partner=1039734271&amp;token=AbCd_-12">';
-	it('follows the move to the custom address', async () => {
-		const seen: string[] = [];
-		const http: Http = async (req) => {
-			seen.push(req.url);
-			return req.url.includes('/profiles/') ? { status: 302, text: '', location: '/id/storage/tradeoffers/privacy' } : { status: 200, text: page };
-		};
-		const link = await fetchOwnTradeLink(http, '76561199000000001', 'c');
-		expect(link?.token).toBe('AbCd_-12');
-		expect(seen[1]).toBe('https://steamcommunity.com/id/storage/tradeoffers/privacy');
-	});
-	it('gives up, without a session error, on a move to the login page or to another site', async () => {
-		await expect(fetchOwnTradeLink(async () => ({ status: 302, text: '', location: 'https://steamcommunity.com/login/home' }), '76561199000000001', 'c')).resolves.toBeUndefined();
-		await expect(fetchOwnTradeLink(async () => ({ status: 302, text: '', location: 'https://evil.example/x' }), '76561199000000001', 'c')).resolves.toBeUndefined();
 	});
 });

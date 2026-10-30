@@ -22,7 +22,6 @@ contextBridge.exposeInMainWorld('api', {
 	tradeCancel: (id: string, offerId: string) => call('tradeCancel', id, offerId),
 	backupSave: (password: string) => call('backupSave', password),
 	backupRestore: (password: string) => call('backupRestore', password),
-	tradeResolve: (account: string) => call('tradeResolve', account),
 	tradeLinkSave: (name: string, link: string) => call('tradeLinkSave', name, link),
 	tradeLinkRemove: (link: string) => call('tradeLinkRemove', link),
 	tradeSend: (id: string, game: string, assetIds: string[], target: { account?: string; link?: string }) => call('tradeSend', id, game, assetIds, target),
