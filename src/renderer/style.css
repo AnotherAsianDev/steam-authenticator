@@ -611,3 +611,10 @@ select { padding-right: 8px; }
 .check-box .health.warn .hint { color: var(--warn); }
 .check-box .health.bad .hint { color: var(--danger); }
 .bulk-row.head .acct { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600; color: var(--text); }
+.bulk-table.tall { max-height: none; flex: 1; min-height: 0; }
+.check-box .health strong { font-size: 14px; }
+.check-box .health.ok strong { color: var(--ok, #4cc38a); }
+.check-box .health.warn strong { color: var(--warn); }
+.check-box .health.bad strong { color: var(--danger); }
+main.fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 16px; }
+main.fill > .hint { flex: none; }

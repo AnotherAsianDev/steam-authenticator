@@ -2498,7 +2498,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 					const r = await api.tradeCheck(id);
 					b.disabled = false;
 					if (!alive()) return;
-					checkBox.replaceChildren(...(r.ok ? r.value.map((l) => el('div', { class: `health ${l.level}` }, el('span', { class: 'hint', textContent: `${l.level === 'ok' ? '✓' : l.level === 'warn' ? '!' : '✕'} ${l.text}` }))) : [el('p', { class: 'hint error', textContent: r.error })]));
+					checkBox.replaceChildren(...(r.ok ? verdict(r.value) : [el('p', { class: 'hint error', textContent: r.error })]));
 				} })),
 			checkBox,
 			...(tradeNotes(me).length ? [el('p', { class: 'hint warnline', textContent: `This account may not be able to trade: ${tradeNotes(me).join('. ')}.` })] : []),
@@ -2515,6 +2515,17 @@ async function tradesScreen(wanted?: string): Promise<void> {
 }
 
 /** What may stop an account from trading, for the Trades tab. */
+/** One answer instead of a list: can it trade, and if not or not sure, why. */
+const verdict = (lines: { level: 'ok' | 'warn' | 'bad'; text: string }[]): HTMLElement[] => {
+	const bad = lines.filter((l) => l.level === 'bad');
+	const warn = lines.filter((l) => l.level === 'warn');
+	const head = bad.length ? ['bad', '✕ Cannot trade right now'] : warn.length ? ['warn', '! Can trade, but watch out'] : ['ok', '✓ Can trade now'];
+	return [
+		el('div', { class: `health ${head[0]}` }, el('strong', { textContent: head[1] })),
+		...[...bad, ...warn].map((l) => el('div', { class: `health ${l.level}` }, el('span', { class: 'hint', textContent: l.text }))),
+		el('p', { class: 'hint fine', textContent: 'Based on the sign-in, the public profile and the ban check. Steam has the final say.' })
+	];
+};
 const tradeNotes = (a: Row): string[] => [...a.restrictions, ...a.bans.filter((b) => b.startsWith('Trade')).map((b) => `${b}: Steam blocks or limits trading`)];
 const field = (label: string, control: HTMLElement): HTMLElement => el('label', { class: 'labelled' }, el('span', { textContent: label }), control);
 const sleep = (ms: number): Promise<void> => new Promise((done) => window.setTimeout(done, ms));
@@ -2528,7 +2539,7 @@ function offersScreen(all: Row[]): void {
 	let busy = false;
 	const sel = el('select', { ariaLabel: 'Account' }, el('option', { value: '', textContent: 'All accounts' }), ...all.map((a) => el('option', { value: a.steamId, textContent: accountLabel(a.name, a.nickname) })));
 	const status = el('p', { class: 'hint', textContent: 'Shows offers sent from an account that nobody has accepted yet, for example after a bulk send. Cancel them here instead of on Steam.' });
-	const out = el('div', { class: 'bulk-table' });
+	const out = el('div', { class: 'bulk-table tall' });
 	const go = el('button', { class: 'small primary', type: 'button', textContent: 'Check' });
 
 	function draw(a: Row, offers: { id: string; state: 'waiting' | 'confirm'; items: number; created: number }[]): void {
@@ -2574,7 +2585,7 @@ function offersScreen(all: Row[]): void {
 		if (alive() && !status.textContent?.endsWith('Stopped.') && !(list.length === 1 && status.textContent && !status.textContent.startsWith('Checking'))) status.textContent = found ? `${found} open offer${found === 1 ? '' : 's'}.` : 'No open offers.';
 	}
 	go.addEventListener('click', () => void check());
-	show(tradesHeader(), el('main', { class: 'send' }, el('div', { class: 'send-from' }, el('span', { textContent: 'Account' }), sel, go), status, out));
+	show(tradesHeader(), el('main', { class: 'send fill' }, el('div', { class: 'send-from' }, el('span', { textContent: 'Account' }), sel, go), status, out));
 }
 
 /** What every account holds in one game, read one account at a time. */
@@ -2587,7 +2598,7 @@ function overviewScreen(all: Row[]): void {
 	const gameSel = el('select', { ariaLabel: 'Game' }, ...GAME_CHOICES.map(([k, name]) => el('option', { value: k, textContent: name })));
 	gameSel.addEventListener('change', () => { if (!busy) game = gameSel.value; else gameSel.value = game; });
 	const status = el('p', { class: 'hint', textContent: 'Reads each account\'s inventory one after another, with a short pause so Steam does not slow you down. 68 accounts take about 1 to 2 minutes.' });
-	const table = el('div', { class: 'bulk-table' });
+	const table = el('div', { class: 'bulk-table tall' });
 	const go = el('button', { class: 'small primary', type: 'button', textContent: 'Read all inventories' });
 	const stopBtn = el('button', { class: 'small', type: 'button', textContent: 'Stop', hidden: true, onclick: () => { stop = true; } });
 	type Line = { a: Row; tradable?: number; locked?: number; error?: string };
@@ -2637,7 +2648,7 @@ function overviewScreen(all: Row[]): void {
 	go.addEventListener('click', () => void readAll());
 	draw();
 	table.replaceChildren();
-	show(tradesHeader(), el('main', { class: 'send' }, el('div', { class: 'send-bar' }, field('Game', gameSel), go, stopBtn), status, table));
+	show(tradesHeader(), el('main', { class: 'send fill' }, el('div', { class: 'send-bar' }, field('Game', gameSel), go, stopBtn), status, table));
 }
 
 /** Send every tradeable item of one game from several accounts to one receiver. */
