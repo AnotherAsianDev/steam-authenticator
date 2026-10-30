@@ -2,7 +2,7 @@
 
 A lean desktop Steam Guard authenticator for Windows. Plain maFiles next to the exe, confirmations, no background hammering of Steam.
 
-![Codes](docs/screenshots/codes.png)
+![Accounts](docs/screenshots/codes.png)
 
 <table>
 <tr>
@@ -39,7 +39,7 @@ A lean desktop Steam Guard authenticator for Windows. Plain maFiles next to the 
 
 Minimal desktop Steam Guard authenticator (Electron + TypeScript, no UI framework).
 
-- **Codes** with Steam clock sync. Click the code box to copy (clipboard clears after a configurable time). Click an account name to open its Steam profile.
+- **Accounts and codes** with Steam clock sync, the time left shown as a ring around the code box. Click the code box to copy (clipboard clears after a configurable time). Click an account name to open its Steam profile.
 - **Drop folder:** put maFiles (any file name) into the storage folder while the app is running or closed;
   they are renamed to `<steamid>.maFile` and appear within a second or two. "Open storage folder" shows it
   (the `maFiles` folder next to the exe in the Windows build).

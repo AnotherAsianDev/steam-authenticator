@@ -2,7 +2,11 @@
 
 ## 0.9.0
 - New compact design: smaller rows, avatars and codes so more fits on screen, and a side menu that collapses to icons. Two small icons at the bottom of the menu collapse/expand it and switch the theme (system, light, dark).
-- New compact list view (fourth layout button): one thin line per account, about 36 px instead of 56, with the countdown as a small ring next to the code instead of a line across the row.
+- New compact list view: one thin line per account, about 36 px instead of 56.
+- The time left on a code is now the border of the code box, which empties clockwise and turns red in the last 5 seconds, instead of a line across the whole row. Every view uses it.
+- The page called Codes is now called Accounts.
+- The four views (list, compact list, columns, grid) sit in one View menu instead of four buttons.
+- Profile picture: an account whose Steam profile was never set up now shows Steam's default picture instead of a letter.
 - New "columns" view: compact rows with two or more accounts per line, depending on the window width. Grid and columns use the full window width.
 - Right-click an account: a clean menu in three groups (Copy, Account, Open on Steam) plus Move to trash, with arrow-key navigation.
 - Status marks moved out of the way: each kind of ban (VAC, game, community, trade, trade probation) has its own icon, and waiting confirmations, sign-in problems, the note and the tag are small icons right after the name (hover for the meaning), so rows keep their height. The note no longer takes a line under the name. A banned account also gets a red outline.

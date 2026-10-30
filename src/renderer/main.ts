@@ -320,7 +320,7 @@ function buildShell(): void {
 		el(
 			'nav',
 			{ class: 'navlist' },
-			item('codes', 'Codes', () => void navigate({ name: 'list' })),
+			item('codes', 'Accounts', () => void navigate({ name: 'list' })),
 			item('confirms', 'Confirmations', () => void navigate({ name: 'confirms' }), true),
 			item('trades', 'Trades', () => void navigate({ name: 'trades' })),
 			item('todo', 'To do', () => void navigate({ name: 'todo' }), true),
@@ -784,7 +784,7 @@ async function listScreen(): Promise<void> {
 	const header = el(
 		'header',
 		{},
-		el('h1', { class: 'title', textContent: 'Codes' }),
+		el('h1', { class: 'title', textContent: 'Accounts' }),
 		el('div', { class: 'actions' }, iconButton('Check confirmations now', '↻', () => void api.refreshAll()), )
 	);
 	const strip = progressStrip();
@@ -834,16 +834,23 @@ async function listScreen(): Promise<void> {
 			if (li) list.append(li);
 		}
 	}
-	const layoutBtns = (['list', 'dense', 'columns', 'grid'] as const).map((l) =>
-		el('button', {
-			class: 'seg', type: 'button', title: { list: 'List', dense: 'Compact list', columns: 'Columns', grid: 'Grid' }[l], ariaLabel: `${l} layout`, textContent: { list: '☰', dense: '≡', columns: '▥', grid: '▦' }[l],
-			onclick: async () => {
-				const r = await api.setSettings({ layout: l });
-				if (!r.ok) return toast(r.error, true);
-				applySettings(r.value);
+	const LAYOUTS = [['list', '☰', 'List'], ['dense', '≡', 'Compact list'], ['columns', '▥', 'Columns'], ['grid', '▦', 'Grid']] as const;
+	const viewGlyph = el('span', { class: 'glyph' });
+	const viewName = el('span');
+	const viewBtn = el('button', { class: 'small view-btn', type: 'button', title: 'Change the view', ariaLabel: 'Change the view', ariaHasPopup: 'menu' }, viewGlyph, viewName);
+	viewBtn.addEventListener('click', () => {
+		const r = viewBtn.getBoundingClientRect();
+		showMenu(r.left, r.bottom + 4, [{ head: 'View' }, ...LAYOUTS.map(([l, glyph, name]) => ({
+			label: `${glyph}  ${name}`,
+			hint: settings.layout === l ? '✓' : '',
+			run: async () => {
+				const res = await api.setSettings({ layout: l });
+				if (!res.ok) return toast(res.error, true);
+				applySettings(res.value);
 				drawLayout();
 			}
-		}));
+		}))]);
+	});
 	list.addEventListener('contextmenu', (e) => {
 		const li = (e.target as HTMLElement).closest<HTMLLIElement>('li.row');
 		const row = li && lastRows.find((r) => r.steamId === li.dataset['id']);
@@ -884,7 +891,9 @@ async function listScreen(): Promise<void> {
 		list.classList.toggle('grid', settings.layout === 'grid');
 		list.classList.toggle('columns', settings.layout === 'columns');
 		list.classList.toggle('dense', settings.layout === 'dense');
-		layoutBtns.forEach((b, i) => b.classList.toggle('on', (['list', 'dense', 'columns', 'grid'] as const)[i] === settings.layout));
+		const cur = LAYOUTS.find(([l]) => l === settings.layout) ?? LAYOUTS[0];
+		viewGlyph.textContent = cur[1];
+		viewName.textContent = cur[2];
 	}
 	drawLayout();
 	const tagSelect = el('select', { class: 'sort', ariaLabel: 'Filter by tag', title: 'Filter by tag', hidden: true });
@@ -901,7 +910,7 @@ async function listScreen(): Promise<void> {
 		tagSelect.value = tagFilter;
 		tagSelect.hidden = tags.length === 0;
 	}
-	const filterBar = el('div', { class: 'filterbar' }, search, el('div', { class: 'filter-line' }, chipRow, el('span', { class: 'seg-group' }, ...layoutBtns), tagSelect, sortSelect));
+	const filterBar = el('div', { class: 'filterbar' }, search, el('div', { class: 'filter-line' }, chipRow, viewBtn, tagSelect, sortSelect));
 	const overview = el('section', { class: 'overview', hidden: true });
 	/** Account count and what is still missing, from the same list as the To do tab (ignored items are not counted). */
 	function drawOverview(total: number, todo: TodoItem[] | undefined): void {
@@ -990,8 +999,7 @@ async function listScreen(): Promise<void> {
 			el('span', { class: 'who' }, el('span', { class: 'name-line' }, profileLink(row.steamId, row.name, 'name'), el('span', { class: 'flags' })), el('span', { class: 'sid' })),
 			code,
 			star,
-			open,
-			el('span', { class: 'bar' }, el('i'))
+			open
 		);
 		return li;
 	}
@@ -1029,8 +1037,7 @@ async function listScreen(): Promise<void> {
 		codeEl.textContent = row.code;
 
 		drawFlags(li, row);
-		li.querySelector<HTMLElement>('.bar i')!.style.width = `${(row.remaining / 30) * 100}%`;
-		li.querySelector<HTMLElement>('.bar')!.style.setProperty('--p', `${(row.remaining / 30) * 360}deg`);
+		li.style.setProperty('--p', `${(row.remaining / 30) * 360}deg`);
 		li.classList.toggle('expiring', row.remaining <= 5);
 	}
 

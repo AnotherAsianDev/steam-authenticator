@@ -15,6 +15,8 @@ const MAX_AGE_MS = 7 * 24 * 3600_000;
 const BANS_AGE_MS = 12 * 3600_000;
 const RETRY_MS = 3600_000;
 const MAX_BYTES = 1_000_000;
+/** Steam's own picture for profiles that have none or were never set up. */
+export const DEFAULT_AVATAR = 'https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg';
 
 export function extractAvatarUrl(xml: string): string | undefined {
 	const m = /<avatarFull>\s*(?:<!\[CDATA\[)?\s*(https:\/\/[^\s\]<]+)/.exec(xml);
@@ -253,7 +255,7 @@ export class AvatarCache {
 		if (now - (this.checkedAt.get(steamId) ?? 0) < 300_000) return;
 		this.checkedAt.set(steamId, now);
 		const p = this.profiles[steamId];
-		const fresh = p && p.name !== undefined && now - p.checked < (want.bans ? BANS_AGE_MS : MAX_AGE_MS);
+		const fresh = p && (p.name !== undefined || p.url !== undefined) && now - p.checked < (want.bans ? BANS_AGE_MS : MAX_AGE_MS);
 		const haveBans = !want.bans || this.apiMode || p?.bans !== undefined;
 		// A missing picture is no reason to ask again when the profile has no picture address at all (failed until the retry time).
 		const haveImage = !want.image || this.has(steamId);
@@ -283,8 +285,7 @@ export class AvatarCache {
 			this.profiles[steamId] = next;
 			if (bans) this.noteNewBan(steamId, before?.bans, bans);
 			if (want.image) {
-				const url = extractAvatarUrl(xml);
-				if (!url) throw new Error('no avatar');
+				const url = extractAvatarUrl(xml) ?? DEFAULT_AVATAR;
 				if (next.url !== url || !existsSync(this.file(steamId))) {
 					const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
 					const buf = Buffer.from(await res.arrayBuffer());
