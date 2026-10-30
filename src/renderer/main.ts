@@ -17,6 +17,15 @@ interface Row {
 	state: 'idle' | 'loading' | 'ok' | 'signin' | 'error';
 	pending: number | null;
 }
+interface TradeItem {
+	assetId: string;
+	group: string;
+	name: string;
+	type: string;
+	icon: string;
+	color: string;
+	amount: number;
+}
 interface Item {
 	id: string;
 	type: number;
@@ -130,6 +139,11 @@ declare const api: {
 	apiKeyTest(): P<'ok' | 'invalid' | 'network'>;
 	apiKeyRemove(): P<{ has: boolean; locked: boolean; hint: string }>;
 	apiKeyPage(): P<void>;
+	tradeInventory(id: string, game: string): P<{ items: TradeItem[]; untradable: number; cut: boolean }>;
+	tradeLinks(): P<{ name: string; link: string }[]>;
+	tradeLinkSave(name: string, link: string): P<{ name: string; link: string }[]>;
+	tradeLinkRemove(link: string): P<{ name: string; link: string }[]>;
+	tradeSend(id: string, game: string, assetIds: string[], target: { account?: string; link?: string }): P<{ offers: { offerId: string; items: number; confirmed: boolean; note: string }[]; planned: number; problem: string }>;
 	healthCheck(): P<{ skew: number; rows: { steamId: string; name: string; nickname: string | null; level: 'ok' | 'warn' | 'bad'; issues: string[] }[] }>;
 	confirmations(id: string): P<Status>;
 	refresh(id: string): P<Status>;
@@ -204,7 +218,7 @@ const root = document.getElementById('app')!;
 let settings: Settings;
 let vaultState: VaultInfo = { enabled: false, locked: false, pin: false, pinTries: 0 };
 let timer: number | undefined;
-let view: { name: 'list' } | { name: 'trash' } | { name: 'log' } | { name: 'todo' } | { name: 'export' } | { name: 'confirms' } | { name: 'add' } | { name: 'settings' } | { name: 'detail'; id: string } = { name: 'list' };
+let view: { name: 'list' } | { name: 'trash' } | { name: 'log' } | { name: 'todo' } | { name: 'export' } | { name: 'confirms' } | { name: 'add' } | { name: 'settings' } | { name: 'detail'; id: string } | { name: 'send'; id: string } = { name: 'list' };
 let refreshView: () => void = () => undefined;
 const avatarImages = new Map<string, string>();
 
@@ -319,7 +333,7 @@ function buildShell(): void {
 	applySettings(settings);
 }
 function setNav(): void {
-	const active = view.name === 'list' || view.name === 'detail' ? 'codes' : view.name;
+	const active = view.name === 'list' || view.name === 'detail' || view.name === 'send' ? 'codes' : view.name;
 	navButtons.forEach((b, id) => b.classList.toggle('active', id === active));
 	navButtons.get('folder')?.classList.remove('active');
 }
@@ -495,6 +509,7 @@ async function navigate(v: typeof view): Promise<void> {
 	else if (v.name === 'log') await logScreen();
 	else if (v.name === 'trash') await trashScreen();
 	else if (v.name === 'export') await exportScreen();
+	else if (v.name === 'send') await sendScreen(v.id);
 	else await detailScreen(v.id);
 }
 
@@ -580,11 +595,11 @@ function confirmButton(label: string, confirmLabel: string, cls: string, run: ()
 	return b;
 }
 
-const backHeader = (title: string): HTMLElement =>
+const backHeader = (title: string, back: () => void = goList): HTMLElement =>
 	el(
 		'header',
 		{},
-		el('div', { class: 'left' }, el('button', { class: 'icon', title: 'Back', ariaLabel: 'Back', textContent: '‹', onclick: goList }), el('span', { class: 'title', textContent: title }))
+		el('div', { class: 'left' }, el('button', { class: 'icon', title: 'Back', ariaLabel: 'Back', textContent: '‹', onclick: back }), el('span', { class: 'title', textContent: title }))
 	);
 
 // --------------------------------------------------------------- lock + PIN --
@@ -839,6 +854,7 @@ async function listScreen(): Promise<void> {
 			'sep',
 			{ head: 'Account' },
 			{ label: row.pinned ? 'Unpin' : 'Pin to the top', run: async () => { const r = await api.setMeta(id, { pinned: !row.pinned }); if (!r.ok) return toast(r.error, true); await refresh(); } },
+			{ label: 'Send items…', run: () => void navigate({ name: 'send', id }) },
 			{ label: 'Details, note and tags…', run: () => void navigate({ name: 'detail', id }) },
 			{ label: row.pending ? `Confirmations (${row.pending})…` : 'Confirmations…', run: () => void navigate({ name: 'confirms' }) },
 			{ label: 'Check confirmations now', run: async () => { const r = await api.refresh(id); toast(r.ok ? 'Checked' : r.error, !r.ok); await refresh(); } },
@@ -1839,6 +1855,7 @@ async function detailScreen(id: string): Promise<void> {
 	const webBar = el(
 		'div',
 		{ class: 'chips' },
+		el('button', { class: 'chip', type: 'button', textContent: 'Send items…', onclick: () => void navigate({ name: 'send', id }) }),
 		...([['profile', 'Profile'], ['inventory', 'Inventory'], ['tradeoffers', 'Trade offers'], ['market', 'Market'], ['store', 'Store'], ['account', 'Account']] as const).map(([target, label]) =>
 			el('button', {
 				class: 'chip',
@@ -2208,6 +2225,204 @@ async function settingsScreen(): Promise<void> {
 	if (redraw) { content.classList.remove('enter'); content.scrollTop = scroll; }
 	void api.version().then((v) => { const n = document.getElementById('ver'); if (n && v.ok) n.textContent = `Version ${v.value}. To update, drop the new folder over this one and choose Replace. Your maFiles and data stay.`; });
 	refreshView = () => undefined;
+}
+
+// -------------------------------------------------------------- send items --
+
+const GAME_CHOICES: [string, string][] = [['cs2', 'Counter-Strike 2'], ['dota2', 'Dota 2'], ['tf2', 'Team Fortress 2'], ['rust', 'Rust'], ['steam', 'Steam (cards, emoticons, backgrounds)']];
+const itemImage = (icon: string): string => `https://community.cloudflare.steamstatic.com/economy/image/${icon}/96fx96f`;
+const OFFER_SIZE = 100;
+
+/** Pick tradeable items of one account and send them to another of your accounts or to a trade link. */
+async function sendScreen(id: string): Promise<void> {
+	const [acc, links] = await Promise.all([api.accounts(), api.tradeLinks()]);
+	if (!acc.ok) return void toast(acc.error, true);
+	const me = acc.value.find((a) => a.steamId === id);
+	if (!me) return goList();
+	const others = acc.value.filter((a) => a.steamId !== id);
+	let savedLinks = links.ok ? links.value : [];
+	let game = 'cs2';
+	let items: TradeItem[] = [];
+	const picked = new Set<string>();
+	let filter = '';
+	let busy = false;
+
+	const grid = el('div', { class: 'items' });
+	const info = el('p', { class: 'hint', textContent: '' });
+	const count = el('strong', { textContent: '0 selected' });
+	const gameSel = el('select', { ariaLabel: 'Game' });
+	for (const [k, name] of GAME_CHOICES) gameSel.append(el('option', { value: k, textContent: name }));
+	const search = el('input', { type: 'text', class: 'search', placeholder: 'Filter items', ariaLabel: 'Filter items', spellcheck: false });
+
+	const targetSel = el('select', { ariaLabel: 'Send to' });
+	const linkInput = el('input', { type: 'text', class: 'search', placeholder: 'https://steamcommunity.com/tradeoffer/new/?partner=…&token=…', ariaLabel: 'Trade link', spellcheck: false });
+	const linkName = el('input', { type: 'text', class: 'search', placeholder: 'Name to save it under', ariaLabel: 'Name for the trade link', maxLength: 30, spellcheck: false });
+	const linkBox = el('div', { class: 'link-box' }, linkInput, el('div', { class: 'row-actions left' }, linkName,
+		el('button', { class: 'small', type: 'button', textContent: 'Save link', onclick: async () => {
+			const r = await api.tradeLinkSave(linkName.value, linkInput.value);
+			if (!r.ok) return toast(r.error, true);
+			savedLinks = r.value;
+			drawTargets(`l:${linkInput.value.trim()}`);
+			toast('Trade link saved');
+		} }),
+		el('button', { class: 'small', type: 'button', textContent: 'Remove saved', onclick: async () => {
+			const cur = targetSel.value;
+			if (!cur.startsWith('l:')) return toast('Pick a saved link first', true);
+			const r = await api.tradeLinkRemove(cur.slice(2));
+			if (!r.ok) return toast(r.error, true);
+			savedLinks = r.value;
+			drawTargets();
+		} })));
+	function drawTargets(select = ''): void {
+		const group = (label: string, opts: HTMLOptionElement[]): HTMLElement[] => {
+			if (!opts.length) return [];
+			const g = el('optgroup');
+			g.label = label;
+			g.append(...opts);
+			return [g];
+		};
+		targetSel.replaceChildren(
+			el('option', { value: '', textContent: 'Choose where to send…' }),
+			...group('Your accounts', others.map((a) => el('option', { value: `a:${a.steamId}`, textContent: accountLabel(a.name, a.nickname) }))),
+			...group('Saved trade links', savedLinks.map((l) => el('option', { value: `l:${l.link}`, textContent: l.name }))),
+			el('option', { value: 'paste', textContent: 'Another trade link…' })
+		);
+		targetSel.value = select;
+		if (targetSel.value !== select) targetSel.value = '';
+		linkBox.hidden = targetSel.value !== 'paste';
+		drawSummary();
+	}
+	targetSel.addEventListener('change', () => { linkBox.hidden = targetSel.value !== 'paste'; drawSummary(); });
+
+	const groups = (): [string, TradeItem[]][] => {
+		const map = new Map<string, TradeItem[]>();
+		for (const i of items) map.set(i.group, [...(map.get(i.group) ?? []), i]);
+		return [...map.entries()].sort((a, b) => a[1][0]!.name.localeCompare(b[1][0]!.name));
+	};
+	const visible = (): [string, TradeItem[]][] => {
+		const q = filter.trim().toLowerCase();
+		return groups().filter(([, g]) => !q || g[0]!.name.toLowerCase().includes(q) || g[0]!.type.toLowerCase().includes(q));
+	};
+	function drawGrid(): void {
+		const shown = visible();
+		grid.replaceChildren(
+			...shown.map(([key, g]) => {
+				const first = g[0]!;
+				const all = g.every((i) => picked.has(i.assetId));
+				const some = !all && g.some((i) => picked.has(i.assetId));
+				const nameEl = el('span', { class: 'iname', textContent: first.name });
+				if (first.color) nameEl.style.color = `#${first.color}`;
+				const tile = el('button', { class: `item${all ? ' on' : some ? ' part' : ''}`, type: 'button', title: `${first.name}${first.type ? ` (${first.type})` : ''}`, ariaPressed: String(all), onclick: () => {
+					for (const i of g) (all ? picked.delete(i.assetId) : picked.add(i.assetId));
+					drawGrid();
+				} },
+				first.icon ? el('img', { src: itemImage(first.icon), alt: '', loading: 'lazy' }) : el('span', { class: 'noimg', textContent: '?' }),
+				nameEl);
+				const total = g.reduce((n, i) => n + i.amount, 0);
+				if (total > 1) tile.append(el('span', { class: 'qty', textContent: `×${total}` }));
+				tile.dataset['key'] = key;
+				return tile;
+			})
+		);
+		if (!shown.length) grid.replaceChildren(el('p', { class: 'hint', textContent: items.length ? 'No item matches.' : 'Nothing tradeable here.' }));
+		drawSummary();
+	}
+
+	const confirmBox = el('div', { class: 'send-confirm', hidden: true });
+	const result = el('div', { class: 'send-result' });
+	const sendBtn = el('button', { class: 'primary', type: 'button', textContent: 'Review…' });
+	const targetName = (): string => targetSel.selectedOptions[0]?.textContent ?? '';
+	function chosen(): string[] {
+		return items.filter((i) => picked.has(i.assetId)).map((i) => i.assetId);
+	}
+	function targetParam(): { account?: string; link?: string } | undefined {
+		const v = targetSel.value;
+		if (v.startsWith('a:')) return { account: v.slice(2) };
+		if (v.startsWith('l:')) return { link: v.slice(2) };
+		if (v === 'paste' && linkInput.value.trim()) return { link: linkInput.value.trim() };
+		return undefined;
+	}
+	function drawSummary(): void {
+		const n = chosen().length;
+		count.textContent = `${n} selected`;
+		sendBtn.disabled = busy || n === 0 || !targetParam();
+		confirmBox.hidden = true;
+	}
+	linkInput.addEventListener('input', drawSummary);
+
+	async function load(): Promise<void> {
+		busy = true;
+		picked.clear();
+		items = [];
+		grid.replaceChildren(el('p', { class: 'hint', textContent: 'Reading the inventory…' }));
+		info.textContent = '';
+		drawSummary();
+		const r = await api.tradeInventory(id, game);
+		busy = false;
+		if (!r.ok) {
+			grid.replaceChildren(el('p', { class: 'hint error', textContent: r.error }));
+			return drawSummary();
+		}
+		items = r.value.items;
+		info.textContent = [
+			`${items.length} tradeable item${items.length === 1 ? '' : 's'}.`,
+			r.value.untradable ? `${r.value.untradable} more cannot be traded right now (trade hold, not tradeable) and are not listed.` : '',
+			r.value.cut ? 'The inventory is very large; only the first part is shown.' : ''
+		].filter(Boolean).join(' ');
+		drawGrid();
+	}
+	gameSel.addEventListener('change', () => { game = gameSel.value; void load(); });
+	search.addEventListener('input', () => { filter = search.value; drawGrid(); });
+
+	sendBtn.addEventListener('click', () => {
+		const n = chosen().length;
+		const offers = Math.ceil(n / OFFER_SIZE);
+		const word = el('input', { type: 'text', class: 'search', placeholder: 'Type SEND', ariaLabel: 'Type SEND to confirm', autocomplete: 'off', spellcheck: false });
+		const go = el('button', { class: 'primary', type: 'button', textContent: 'Send now', disabled: true });
+		word.addEventListener('input', () => { go.disabled = word.value.trim() !== 'SEND'; });
+		go.addEventListener('click', async () => {
+			const target = targetParam();
+			if (!target) return;
+			busy = true;
+			go.disabled = true;
+			word.disabled = true;
+			sendBtn.disabled = true;
+			result.replaceChildren(el('p', { class: 'hint', textContent: `Sending ${offers} offer${offers === 1 ? '' : 's'} and confirming ${offers === 1 ? 'it' : 'them'}… this can take a minute.` }));
+			confirmBox.hidden = true;
+			const r = await api.tradeSend(id, game, chosen(), target);
+			busy = false;
+			if (!r.ok) {
+				result.replaceChildren(el('p', { class: 'hint error', textContent: r.error }));
+				return drawSummary();
+			}
+			const sentItems = r.value.offers.reduce((s, o) => s + o.items, 0);
+			result.replaceChildren(
+				el('p', { class: r.value.problem ? 'hint error' : 'hint good', textContent: r.value.problem ? `Stopped after ${r.value.offers.length} of ${r.value.planned} offers: ${r.value.problem}` : `${r.value.offers.length} offer${r.value.offers.length === 1 ? '' : 's'} sent with ${sentItems} items.` }),
+				...r.value.offers.map((o) => el('p', { class: 'hint fine', textContent: `Offer ${o.offerId}: ${o.items} items, ${o.confirmed ? 'confirmed' : 'not confirmed yet'}${o.note ? `. ${o.note}` : ''}` })),
+				el('p', { class: 'hint fine', textContent: 'The receiving account still has to accept the offers. Items that were sent are gone from the list after you load it again.' }));
+			void load();
+		});
+		confirmBox.hidden = false;
+		confirmBox.replaceChildren(
+			el('p', { textContent: `Send ${n} item${n === 1 ? '' : 's'} from ${accountLabel(me.name, me.nickname)} to ${targetName()}?` }),
+			el('p', { class: 'hint', textContent: `${offers} trade offer${offers === 1 ? '' : 's'} (up to ${OFFER_SIZE} items each), each confirmed on this account. Trades cannot be undone once the other side accepts.` }),
+			el('div', { class: 'row-actions left' }, word, go, el('button', { class: 'small', type: 'button', textContent: 'Cancel', onclick: () => { confirmBox.hidden = true; } })));
+		word.focus();
+	});
+
+	drawTargets();
+	show(
+		backHeader(`Send items from ${accountLabel(me.name, me.nickname)}`, () => void navigate({ name: 'detail', id })),
+		el('main', { class: 'send' },
+			el('div', { class: 'send-bar' }, gameSel, search, el('button', { class: 'small', type: 'button', textContent: 'Select all shown', onclick: () => { for (const [, g] of visible()) for (const i of g) picked.add(i.assetId); drawGrid(); } }), el('button', { class: 'small', type: 'button', textContent: 'None', onclick: () => { picked.clear(); drawGrid(); } })),
+			info,
+			grid,
+			el('div', { class: 'send-to' }, el('div', { class: 'send-count' }, count), targetSel, sendBtn),
+			linkBox,
+			confirmBox,
+			result)
+	);
+	void load();
 }
 
 // ------------------------------------------------------------------- boot --

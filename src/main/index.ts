@@ -11,6 +11,8 @@ import { findMaFileFolders, importFolder, normalizeStoreFolder, readMaFile } fro
 import { CredentialStore } from './credentials';
 import { FolderWatcher } from './watcher';
 import { clockOffset, steamNow, syncClock } from './clock';
+import { GAMES, accountIdOf, chunk, fetchHttp, fetchInventory, fetchOwnTradeLink, parseTradeLink, sendOffer, type TradeLink } from './trade';
+import { sessionCookie } from './sessions';
 import { ConfirmationsClient, fetchTransport, type Action } from './confirmations';
 import { MaFileError, parseMaFile } from './mafile';
 import { SettingsStore } from './settings';
@@ -466,6 +468,79 @@ function registerIpc(): void {
 		if (typeof target !== 'string' || !(target in TARGETS)) throw new UserError('Unknown page');
 		const token = await accounts.webToken(id);
 		openSteamWindow(id, accounts.get(id)!.accountName, token, target);
+	});
+	// ---- Sending items by trade offer ----
+	const gameOf = (key: unknown) => {
+		const g = GAMES.find((x) => x.key === key);
+		if (!g) throw new UserError('Unknown game');
+		return g;
+	};
+	const cookieOf = async (id: string): Promise<string> => sessionCookie(id, await accounts.webToken(id));
+	handle('tradeInventory', async (steamId: unknown, game: unknown) => {
+		const id = known(steamId);
+		return fetchInventory(fetchHttp, id, gameOf(game), await cookieOf(id));
+	});
+	handle('tradeLinks', () => settings.get().tradeLinks);
+	handle('tradeLinkSave', (name: unknown, link: unknown) => {
+		const l = str(link, 'trade link');
+		parseTradeLink(l);
+		const rest = settings.get().tradeLinks.filter((x) => x.link !== l.trim());
+		return settings.update({ tradeLinks: [...rest, { name: typeof name === 'string' ? name : '', link: l }] }).tradeLinks;
+	});
+	handle('tradeLinkRemove', (link: unknown) => settings.update({ tradeLinks: settings.get().tradeLinks.filter((x) => x.link !== link) }).tradeLinks);
+	handle('tradeSend', async (steamId: unknown, game: unknown, assetIds: unknown, target: unknown) => {
+		const id = known(steamId);
+		const g = gameOf(game);
+		if (!Array.isArray(assetIds) || assetIds.length === 0 || assetIds.length > 5000 || !assetIds.every((x) => typeof x === 'string')) throw new UserError('Nothing selected');
+		const t = (target ?? {}) as { account?: unknown; link?: unknown };
+		let to: TradeLink;
+		let toName: string;
+		if (typeof t.account === 'string') {
+			const other = known(t.account);
+			if (other === id) throw new UserError('Choose a different account to receive the items');
+			const found = await fetchOwnTradeLink(fetchHttp, other, await cookieOf(other));
+			if (!found) throw new UserError(`Could not read the trade link of ${accounts.get(other)!.accountName}. Paste it instead`);
+			to = found;
+			toName = accounts.get(other)!.accountName;
+		} else {
+			to = parseTradeLink(str(t.link, 'trade link'));
+			if (to.steamId === id) throw new UserError('That trade link belongs to the sending account');
+			toName = `…${accountIdOf(to.steamId)}`;
+		}
+		// Check against Steam's current inventory, never against what the screen believed.
+		const inv = await fetchInventory(fetchHttp, id, g, await cookieOf(id));
+		const wanted = new Set(assetIds as string[]);
+		const chosen = inv.items.filter((i) => wanted.has(i.assetId));
+		if (chosen.length !== wanted.size) throw new UserError('The inventory changed. Load it again and choose again');
+		const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+		const offers: { offerId: string; items: number; confirmed: boolean; note: string }[] = [];
+		let problem = '';
+		const name = accounts.get(id)!.accountName;
+		const parts = chunk(chosen);
+		for (const [n, part] of parts.entries()) {
+			try {
+				if (n > 0) await pause(3000);
+				const sent = await sendOffer(fetchHttp, await cookieOf(id), to, g, part);
+				log.info('trade', `${name} sent offer ${sent.offerId} (${part.length} items) to ${toName}`);
+				let confirmed = !sent.needsMobile;
+				let note = sent.needsEmail ? 'Steam wants an email confirmation too' : '';
+				for (let attempt = 0; sent.needsMobile && !confirmed && attempt < 3; attempt++) {
+					await pause(2000);
+					const st = await accounts.refresh(id);
+					const c = st.items.find((x) => x.creator === sent.offerId);
+					if (!c) continue;
+					await accounts.act(id, 'accept', [c.id]);
+					confirmed = true;
+				}
+				if (!confirmed) note = 'Sent, but still waiting for your confirmation. Open Confirmations';
+				offers.push({ offerId: sent.offerId, items: part.length, confirmed, note });
+			} catch (err) {
+				problem = err instanceof UserError ? err.message : 'Could not reach Steam';
+				log.warn('trade', `${name}: offer ${n + 1} of ${parts.length} failed: ${problem}`);
+				break;
+			}
+		}
+		return { offers, planned: parts.length, problem };
 	});
 	handle('todo', () => {
 		const ignored = new Set(settings.get().todoIgnored);

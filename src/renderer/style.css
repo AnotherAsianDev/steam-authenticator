@@ -519,3 +519,26 @@ button:active:not(:disabled) { transform: scale(.97); }
 .tab-page { animation: rise .22s cubic-bezier(.2,.7,.2,1); }
 .seg-group.text { margin-left: 0; }
 .seg-group.text .seg { font-size: 13px; padding: 6px 14px; }
+
+/* -------------------------------------------------------------- send items -- */
+.send-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.send-bar .search { flex: 1; min-width: 140px; }
+.items { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; max-height: 46vh; overflow-y: auto; padding: 2px; margin: 6px 0 12px; }
+.item { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 6px 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; text-align: center; }
+.item:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.item.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
+.item.part { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); border-style: dashed; }
+.item img, .item .noimg { width: 64px; height: 48px; object-fit: contain; }
+.item .noimg { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.item .iname { font-size: 11px; line-height: 1.25; max-height: 2.5em; overflow: hidden; word-break: break-word; }
+.item .qty { position: absolute; top: 5px; right: 6px; font-size: 11px; font-weight: 650; padding: 1px 6px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); }
+.item.on::after { content: '✓'; position: absolute; top: 4px; left: 6px; font-size: 12px; color: var(--accent); }
+.send-to { display: flex; gap: 8px; align-items: center; padding-top: 4px; }
+.send-to select { flex: 1; min-width: 0; }
+.send-count { min-width: 90px; font-size: 13px; }
+.link-box { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.link-box[hidden], .send-confirm[hidden] { display: none; }
+.send-confirm { margin-top: 12px; padding: 12px 14px; background: var(--surface); border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--line)); border-radius: 12px; animation: rise .2s ease-out; }
+.send-confirm .search { max-width: 160px; }
+.send-result { margin-top: 10px; }
+.send-result .good { color: var(--ok, #4cc38a); }

@@ -1,3 +1,4 @@
+import { parseTradeLink } from './trade';
 import { cleanFields } from './exporter';
 import { writeFileAtomic } from './atomic';
 import { existsSync, readFileSync } from 'node:fs';
@@ -42,6 +43,8 @@ export interface Settings {
 	updateDismissed: string;
 	/** The "add an API key" banner on the Codes page was dismissed. */
 	hideKeyHint: boolean;
+	/** Trade links kept for sending items. */
+	tradeLinks: { name: string; link: string }[];
 }
 
 export const DEFAULTS: Settings = {
@@ -64,7 +67,8 @@ export const DEFAULTS: Settings = {
 	sortBy: 'added-asc',
 	layout: 'list',
 	updateDismissed: '',
-	hideKeyHint: false
+	hideKeyHint: false,
+	tradeLinks: []
 };
 
 const oneOf = <T>(v: unknown, allowed: readonly T[], fallback: T): T =>
@@ -96,6 +100,7 @@ export function sanitize(input: unknown): Settings {
 		sortBy: oneOf(o['sortBy'], SORT_OPTIONS, DEFAULTS.sortBy),
 		layout: oneOf(o['layout'], LAYOUT_OPTIONS, DEFAULTS.layout),
 		checkUpdates: typeof o['checkUpdates'] === 'boolean' ? o['checkUpdates'] : DEFAULTS.checkUpdates,
+		tradeLinks: cleanLinks(o['tradeLinks']),
 		hideKeyHint: typeof o['hideKeyHint'] === 'boolean' ? o['hideKeyHint'] : DEFAULTS.hideKeyHint,
 		updateDismissed: typeof o['updateDismissed'] === 'string' && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(o['updateDismissed']) ? o['updateDismissed'] : '',
 		importFolders: Array.isArray(o['importFolders'])
@@ -124,4 +129,20 @@ export class SettingsStore {
 		writeFileAtomic(this.file, JSON.stringify(this.current, null, 2), { backup: true });
 		return this.current;
 	}
+}
+
+function cleanLinks(v: unknown): { name: string; link: string }[] {
+	if (!Array.isArray(v)) return [];
+	const out: { name: string; link: string }[] = [];
+	for (const x of v) {
+		const o = (x ?? {}) as Record<string, unknown>;
+		if (typeof o['name'] !== 'string' || typeof o['link'] !== 'string') continue;
+		try {
+			parseTradeLink(o['link']);
+		} catch {
+			continue;
+		}
+		out.push({ name: o['name'].trim().slice(0, 30) || 'Trade link', link: o['link'].trim() });
+	}
+	return out.slice(0, 10);
 }

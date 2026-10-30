@@ -58,6 +58,8 @@ export interface Confirmation {
 	summary: string[];
 	/** Unix seconds, when Steam sent one. */
 	created?: number;
+	/** The trade offer (or listing) this confirmation belongs to. */
+	creator?: string;
 	critical: boolean;
 }
 
@@ -122,6 +124,7 @@ function parseEntry(raw: unknown): Confirmation | null {
 			? e['summary'].filter((x): x is string => typeof x === 'string').slice(0, 20).map(cap)
 			: [],
 		...(Number.isFinite(created) && created > 0 ? { created } : {}),
+		...(typeof e['creator_id'] === 'string' || typeof e['creator_id'] === 'number' ? { creator: String(e['creator_id']) } : {}),
 		critical: isSecurityCritical(type)
 	};
 }
