@@ -553,3 +553,16 @@ button:active:not(:disabled) { transform: scale(.97); }
 
 .send-from { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; color: var(--muted); }
 .send-from select { max-width: 280px; }
+
+.bulk-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; margin: 4px 0 12px; }
+.bulk-acc { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; cursor: pointer; }
+.bulk-acc.off { opacity: .5; cursor: default; }
+.bulk-acc small { margin-left: auto; }
+.send-bar select { flex: 1; min-width: 160px; }
+.bulk-table { margin-top: 10px; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.bulk-table:empty { display: none; }
+.bulk-row { display: grid; grid-template-columns: 1.4fr 70px 70px 2fr; gap: 10px; padding: 8px 14px; font-size: 13px; border-top: 1px solid var(--line); }
+.bulk-row:first-child { border-top: 0; }
+.bulk-row.head { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); background: var(--surface); }
+.bulk-row.foot { background: var(--surface); }
+.bulk-row .error { color: var(--danger); }

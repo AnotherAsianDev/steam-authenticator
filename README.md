@@ -11,21 +11,22 @@ A lean desktop Steam Guard authenticator for Windows. Plain maFiles next to the 
 </tr>
 <tr>
 <td width="50%"><img src="docs/screenshots/send.png" alt="Send items"><br><sub>Trades tab: send tradeable items to another account or a trade link</sub></td>
+<td width="50%"><img src="docs/screenshots/bulk.png" alt="Bulk send"><br><sub>Bulk: several accounts to one, with a preview before anything is sent</sub></td>
+</tr>
+<tr>
 <td width="50%"><img src="docs/screenshots/confirmations.png" alt="Confirmations"><br><sub>Confirmations across all accounts, grouped and filterable</sub></td>
-</tr>
-<tr>
 <td width="50%"><img src="docs/screenshots/account.png" alt="Account page"><br><sub>Account page: copy fields, open Steam signed in</sub></td>
+</tr>
+<tr>
 <td width="50%"><img src="docs/screenshots/todo.png" alt="To do"><br><sub>To do: what is missing per account</sub></td>
-</tr>
-<tr>
 <td width="50%"><img src="docs/screenshots/export.png" alt="Export"><br><sub>Export with your own fields and separator</sub></td>
+</tr>
+<tr>
 <td width="50%"><img src="docs/screenshots/add.png" alt="Add account"><br><sub>Add an authenticator to an account that has none</sub></td>
-</tr>
-<tr>
 <td width="50%"><img src="docs/screenshots/trash.png" alt="Trash"><br><sub>Removed accounts wait in the Trash and can be restored</sub></td>
-<td width="50%"><img src="docs/screenshots/import.png" alt="Import with secrets"><br><sub>Import an account from its username, password and secrets (one or many)</sub></td>
 </tr>
 <tr>
+<td width="50%"><img src="docs/screenshots/import.png" alt="Import with secrets"><br><sub>Import an account from its username, password and secrets (one or many)</sub></td>
 <td width="50%"><img src="docs/screenshots/lock.png" alt="Lock screen"><br><sub>Optional master password and per-PC PIN for saved passwords</sub></td>
 </tr>
 </table>
@@ -49,6 +50,7 @@ Minimal desktop Steam Guard authenticator (Electron + TypeScript, no UI framewor
   A refresh token is kept in `sessions.json` (plain text).
 - **Copy** username, password (if saved), shared secret, identity secret, revocation code, SteamID64.
 - **Profile pictures** from the public profile (no API key), at most once a week per account.
+- **Trades tab, bulk:** tick several accounts and a game, preview what each would send, then send everything to one account.
 - **Trades tab:** pick an account's tradeable items (with pictures) and send them to another of your accounts or a trade link in one go; offers are split, checked against the live inventory and confirmed for you.
 - **Settings:** in tabs: theme (system, light or dark), nickname, SteamID64, pictures, ban watching and the optional API key, check on startup / optional interval, clipboard clearing, master password and PIN, updates, import folders, health check.
 

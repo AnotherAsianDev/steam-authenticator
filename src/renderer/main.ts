@@ -140,6 +140,7 @@ declare const api: {
 	apiKeyRemove(): P<{ has: boolean; locked: boolean; hint: string }>;
 	apiKeyPage(): P<void>;
 	tradeInventory(id: string, game: string): P<{ items: TradeItem[]; untradable: number; locked: { name: string; icon: string; color: string; count: number; until: number | null }[]; cut: boolean }>;
+	tradeResolve(account: string): P<string>;
 	tradeLinks(): P<{ name: string; link: string }[]>;
 	tradeLinkSave(name: string, link: string): P<{ name: string; link: string }[]>;
 	tradeLinkRemove(link: string): P<{ name: string; link: string }[]>;
@@ -2237,10 +2238,20 @@ const OFFER_SIZE = 100;
 
 /** The Trades tab: pick tradeable items of one account and send them to another of your accounts or to a trade link. */
 let tradeSource = '';
+let tradeMode: 'one' | 'bulk' = 'one';
+/** Changes whenever the Trades tab is opened, so a running bulk send stops when you leave. */
+let tradeRun = 0;
+const modeBar = (): HTMLElement =>
+	el('span', { class: 'seg-group text', role: 'group', ariaLabel: 'Mode' }, ...([['one', 'One account'], ['bulk', 'Several accounts']] as const).map(([m, label]) =>
+		el('button', { class: `seg${tradeMode === m ? ' on' : ''}`, type: 'button', textContent: label, onclick: () => { tradeMode = m; void navigate({ name: 'trades' }); } })));
+const tradesHeader = (): HTMLElement => el('header', {}, el('h1', { class: 'title', textContent: 'Trades' }), modeBar());
+
 async function tradesScreen(wanted?: string): Promise<void> {
+	tradeRun++;
 	const [acc, links] = await Promise.all([api.accounts(), api.tradeLinks()]);
 	if (!acc.ok) return void toast(acc.error, true);
-	if (!acc.value.length) return void show(el('header', {}, el('h1', { class: 'title', textContent: 'Trades' })), el('main', {}, el('p', { class: 'hint', textContent: 'Add an account first.' })));
+	if (!acc.value.length) return void show(tradesHeader(), el('main', {}, el('p', { class: 'hint', textContent: 'Add an account first.' })));
+	if (tradeMode === 'bulk') return bulkScreen(acc.value, links.ok ? links.value : []);
 	const id = [wanted, tradeSource].find((x) => x && acc.value.some((a) => a.steamId === x)) ?? acc.value[0]!.steamId;
 	tradeSource = id;
 	const me = acc.value.find((a) => a.steamId === id)!;
@@ -2443,7 +2454,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 
 	drawTargets();
 	show(
-		el('header', {}, el('h1', { class: 'title', textContent: 'Trades' })),
+		tradesHeader(),
 		el('main', { class: 'send' },
 			el('div', { class: 'send-from' }, el('span', { textContent: 'Send items from' }), fromSel),
 			el('div', { class: 'send-bar' }, gameSel, search, el('button', { class: 'small', type: 'button', textContent: 'Select all shown', onclick: () => { for (const [, g] of visible()) for (const i of g) picked.add(i.assetId); drawGrid(); } }), el('button', { class: 'small', type: 'button', textContent: 'None', onclick: () => { picked.clear(); drawGrid(); } })),
@@ -2456,6 +2467,201 @@ async function tradesScreen(wanted?: string): Promise<void> {
 			result)
 	);
 	void load();
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((done) => window.setTimeout(done, ms));
+/** Stop everything on these; carrying on would only make Steam stricter. */
+const isLimit = (message: string): boolean => /rate|too many|slow down|wait a few/i.test(message);
+
+/** Send every tradeable item of one game from several accounts to one receiver. */
+function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
+	const run = tradeRun;
+	const alive = (): boolean => run === tradeRun && view.name === 'trades';
+	const sources = new Set<string>();
+	let game = 'cs2';
+	let busy = false;
+	let preview: Map<string, { assets: string[]; locked: number; error: string }> | undefined;
+
+	const gameSel = el('select', { ariaLabel: 'Game' }, ...GAME_CHOICES.map(([k, name]) => el('option', { value: k, textContent: name })));
+	const targetSel = el('select', { ariaLabel: 'Receiving account' });
+	const linkInput = el('input', { type: 'text', class: 'search', placeholder: 'https://steamcommunity.com/tradeoffer/new/?partner=…&token=…', ariaLabel: 'Trade link', spellcheck: false, hidden: true });
+	const list = el('div', { class: 'bulk-list' });
+	const status = el('p', { class: 'hint', textContent: '' });
+	const table = el('div', { class: 'bulk-table' });
+	const confirmBox = el('div', { class: 'send-confirm', hidden: true });
+	const previewBtn = el('button', { class: 'small primary', type: 'button', textContent: 'Preview…' });
+	const nameOf = (id: string): string => { const a = all.find((x) => x.steamId === id); return a ? accountLabel(a.name, a.nickname) : id; };
+
+	const targetValue = (): string => targetSel.value;
+	function drawTarget(): void {
+		const keep = targetSel.value;
+		const group = (label: string, opts: HTMLOptionElement[]): HTMLElement[] => {
+			if (!opts.length) return [];
+			const g = el('optgroup');
+			g.label = label;
+			g.append(...opts);
+			return [g];
+		};
+		targetSel.replaceChildren(
+			el('option', { value: '', textContent: 'Choose the receiving account…' }),
+			...group('Your accounts', all.filter((a) => !sources.has(a.steamId)).map((a) => el('option', { value: `a:${a.steamId}`, textContent: accountLabel(a.name, a.nickname) }))),
+			...group('Saved trade links', saved.map((l) => el('option', { value: `l:${l.link}`, textContent: l.name }))),
+			el('option', { value: 'paste', textContent: 'Another trade link…' })
+		);
+		targetSel.value = keep;
+		if (targetSel.value !== keep) targetSel.value = '';
+		linkInput.hidden = targetSel.value !== 'paste';
+	}
+	function drawList(): void {
+		const receiver = targetValue().startsWith('a:') ? targetValue().slice(2) : '';
+		list.replaceChildren(...all.map((a) => {
+			const box = el('input', { type: 'checkbox', checked: sources.has(a.steamId), disabled: a.steamId === receiver || busy, ariaLabel: `Send from ${accountLabel(a.name, a.nickname)}` });
+			box.addEventListener('change', () => { if (box.checked) sources.add(a.steamId); else sources.delete(a.steamId); invalidate(); drawTarget(); drawList(); });
+			return el('label', { class: `bulk-acc${a.steamId === receiver ? ' off' : ''}` }, box, el('span', { textContent: accountLabel(a.name, a.nickname) }), ...(a.steamId === receiver ? [el('small', { class: 'hint', textContent: 'receives' })] : []));
+		}));
+	}
+	function invalidate(): void {
+		if (busy) return;
+		preview = undefined;
+		table.replaceChildren();
+		confirmBox.hidden = true;
+		status.textContent = '';
+		previewBtn.disabled = sources.size === 0 || !targetParam();
+	}
+	function targetParam(): { account?: string; link?: string } | undefined {
+		const v = targetValue();
+		if (v.startsWith('a:')) return { account: v.slice(2) };
+		if (v.startsWith('l:')) return { link: v.slice(2) };
+		if (v === 'paste' && linkInput.value.trim()) return { link: linkInput.value.trim() };
+		return undefined;
+	}
+	gameSel.addEventListener('change', () => { game = gameSel.value; invalidate(); });
+	targetSel.addEventListener('change', () => { linkInput.hidden = targetSel.value !== 'paste'; invalidate(); drawList(); });
+	linkInput.addEventListener('input', invalidate);
+
+	const rowsOf = (): [string, { assets: string[]; locked: number; error: string }][] => [...(preview ?? new Map()).entries()];
+	function drawTable(state?: Map<string, string>): void {
+		const rows = rowsOf();
+		const total = rows.reduce((n, [, p]) => n + p.assets.length, 0);
+		const offers = rows.reduce((n, [, p]) => n + Math.ceil(p.assets.length / OFFER_SIZE), 0);
+		table.replaceChildren(
+			el('div', { class: 'bulk-row head' }, el('span', { textContent: 'Account' }), el('span', { textContent: 'Items' }), el('span', { textContent: 'Offers' }), el('span', { textContent: state ? 'Status' : 'Not tradable yet' })),
+			...rows.map(([id, p]) => el('div', { class: 'bulk-row' },
+				el('span', { textContent: nameOf(id) }),
+				el('span', { textContent: p.error ? '–' : String(p.assets.length) }),
+				el('span', { textContent: p.error ? '–' : String(Math.ceil(p.assets.length / OFFER_SIZE)) }),
+				el('span', { class: p.error ? 'error' : 'hint', textContent: p.error || (state ? state.get(id) ?? 'waiting' : p.locked ? String(p.locked) : '') }))),
+			el('div', { class: 'bulk-row foot' }, el('strong', { textContent: 'Total' }), el('strong', { textContent: String(total) }), el('strong', { textContent: String(offers) }), el('span'))
+		);
+	}
+
+	previewBtn.addEventListener('click', async () => {
+		const want = [...sources];
+		busy = true;
+		previewBtn.disabled = true;
+		preview = new Map();
+		confirmBox.hidden = true;
+		drawList();
+		for (const [n, id] of want.entries()) {
+			if (!alive()) return;
+			status.textContent = `Reading the inventory of ${nameOf(id)} (${n + 1} of ${want.length})…`;
+			const r = await api.tradeInventory(id, game);
+			if (!alive()) return;
+			preview.set(id, r.ok ? { assets: r.value.items.map((i) => i.assetId), locked: r.value.untradable, error: '' } : { assets: [], locked: 0, error: r.error });
+			drawTable();
+			if (!r.ok && isLimit(r.error)) { status.textContent = 'Steam asked to slow down, so the rest was skipped. Wait a few minutes.'; break; }
+			if (n < want.length - 1) await sleep(1500);
+		}
+		busy = false;
+		drawList();
+		const ready = rowsOf().filter(([, p]) => p.assets.length > 0);
+		status.textContent = ready.length ? 'Check this list. Nothing has been sent yet.' : 'There is nothing tradeable to send.';
+		if (ready.length) showConfirm();
+		previewBtn.disabled = false;
+	});
+
+	function showConfirm(): void {
+		const ready = rowsOf().filter(([, p]) => p.assets.length > 0);
+		const total = ready.reduce((n, [, p]) => n + p.assets.length, 0);
+		const offers = ready.reduce((n, [, p]) => n + Math.ceil(p.assets.length / OFFER_SIZE), 0);
+		const word = el('input', { type: 'text', class: 'search word', placeholder: 'Type SEND', ariaLabel: 'Type SEND to confirm', autocomplete: 'off', spellcheck: false });
+		const go = el('button', { class: 'small primary', type: 'button', textContent: 'Send now', disabled: true });
+		const stop = el('button', { class: 'small', type: 'button', textContent: 'Cancel' });
+		word.addEventListener('input', () => { go.disabled = word.value.trim() !== 'SEND'; });
+		let cancelled = false;
+		stop.addEventListener('click', () => { if (busy) { cancelled = true; stop.disabled = true; stop.textContent = 'Stopping after this account…'; } else confirmBox.hidden = true; });
+		go.addEventListener('click', async () => {
+			const t = targetParam();
+			if (!t) return;
+			busy = true;
+			go.disabled = true;
+			word.disabled = true;
+			previewBtn.disabled = true;
+			drawList();
+			stop.textContent = 'Cancel after this account';
+			const state = new Map<string, string>();
+			let link: { link: string } | undefined;
+			try {
+				if (t.account) {
+					const r = await api.tradeResolve(t.account);
+					if (!r.ok) throw new Error(r.error);
+					link = { link: r.value };
+				} else link = { link: t.link! };
+			} catch (err) {
+				status.textContent = (err as Error).message;
+				busy = false;
+				previewBtn.disabled = false;
+				drawList();
+				word.disabled = false;
+				return;
+			}
+			for (const [n, [id, p]] of ready.entries()) {
+				if (cancelled || !alive()) { state.set(id, 'not sent'); continue; }
+				state.set(id, 'sending…');
+				drawTable(state);
+				status.textContent = `Sending from ${nameOf(id)} (${n + 1} of ${ready.length})…`;
+				const r = await api.tradeSend(id, game, p.assets, link);
+				if (!r.ok) {
+					state.set(id, r.error);
+					if (isLimit(r.error)) cancelled = true;
+				} else {
+					const sent = r.value.offers.reduce((s, o) => s + o.items, 0);
+					const open = r.value.offers.filter((o) => !o.confirmed).length;
+					state.set(id, r.value.problem ? `${sent} sent, then: ${r.value.problem}` : `${sent} sent${open ? `, ${open} still to confirm` : ''}`);
+					if (r.value.problem && isLimit(r.value.problem)) cancelled = true;
+				}
+				drawTable(state);
+				if (n < ready.length - 1 && !cancelled) await sleep(5000);
+			}
+			drawTable(state);
+			busy = false;
+			status.textContent = cancelled ? 'Stopped. The accounts marked "not sent" were left alone.' : 'Done. The receiving account still has to accept the offers.';
+			confirmBox.hidden = true;
+			preview = undefined;
+			previewBtn.disabled = sources.size === 0 || !targetParam();
+			drawList();
+		});
+		confirmBox.hidden = false;
+		confirmBox.replaceChildren(
+			el('p', { textContent: `Send ${total} item${total === 1 ? '' : 's'} from ${ready.length} account${ready.length === 1 ? '' : 's'} to ${targetSel.selectedOptions[0]?.textContent ?? ''}?` }),
+			el('p', { class: 'hint', textContent: `${offers} trade offer${offers === 1 ? '' : 's'} in total, one account after the other with a pause in between so Steam is not hammered. Each offer is confirmed on its sending account. Trades cannot be undone once the other side accepts.` }),
+			el('div', { class: 'confirm-actions' }, word, go, stop));
+	}
+
+	drawTarget();
+	drawList();
+	invalidate();
+	show(
+		tradesHeader(),
+		el('main', { class: 'send' },
+			el('p', { class: 'hint', textContent: 'Tick the accounts to send from, choose the game and who receives. Every tradeable item of that game is sent. You see the full list before anything leaves.' }),
+			list,
+			el('div', { class: 'send-bar' }, gameSel, targetSel, previewBtn),
+			linkInput,
+			status,
+			table,
+			confirmBox)
+	);
 }
 
 // ------------------------------------------------------------------- boot --

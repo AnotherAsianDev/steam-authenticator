@@ -480,6 +480,12 @@ function registerIpc(): void {
 		const id = known(steamId);
 		return fetchInventory(fetchHttp, id, gameOf(game), await cookieOf(id));
 	});
+	handle('tradeResolve', async (account: unknown) => {
+		const other = known(account);
+		const found = await fetchOwnTradeLink(fetchHttp, other, await cookieOf(other));
+		if (!found) throw new UserError(`Could not read the trade link of ${accounts.get(other)!.accountName}. Paste it instead`);
+		return `https://steamcommunity.com/tradeoffer/new/?partner=${accountIdOf(found.steamId)}&token=${found.token}`;
+	});
 	handle('tradeLinks', () => settings.get().tradeLinks);
 	handle('tradeLinkSave', (name: unknown, link: unknown) => {
 		const l = str(link, 'trade link');

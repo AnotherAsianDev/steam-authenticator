@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('api', {
 	healthCheck: () => call('healthCheck'),
 	tradeInventory: (id: string, game: string) => call('tradeInventory', id, game),
 	tradeLinks: () => call('tradeLinks'),
+	tradeResolve: (account: string) => call('tradeResolve', account),
 	tradeLinkSave: (name: string, link: string) => call('tradeLinkSave', name, link),
 	tradeLinkRemove: (link: string) => call('tradeLinkRemove', link),
 	tradeSend: (id: string, game: string, assetIds: string[], target: { account?: string; link?: string }) => call('tradeSend', id, game, assetIds, target),
