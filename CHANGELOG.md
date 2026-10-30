@@ -2,7 +2,7 @@
 
 ## 0.9.0
 - New compact design: smaller rows, avatars and codes so more fits on screen, and a side menu that collapses to icons. Two small icons at the bottom of the menu collapse/expand it and switch the theme (system, light, dark).
-- New compact list view: one thin line per account, about 36 px instead of 56.
+- New compact list view: one thin line per account, about 36 px instead of 56, still showing the login name and SteamID64 when those settings are on.
 - The time left on a code is now the border of the code box, which empties clockwise and turns red in the last 5 seconds, instead of a line across the whole row. Every view uses it.
 - The page called Codes is now called Accounts.
 - The four views (list, compact list, columns, grid) sit in one View menu instead of four buttons.

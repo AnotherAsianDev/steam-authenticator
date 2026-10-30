@@ -631,7 +631,8 @@ main.fill > .hint { flex: none; }
 .list.dense .row.banned { background: color-mix(in srgb, var(--danger) 6%, transparent); }
 .list.dense .avatar.sm { width: 22px; height: 22px; border-radius: 6px; font-size: 10px; }
 .list.dense .who { flex-direction: row; align-items: center; gap: 8px; }
-.list.dense .sid, .list.dense .note { display: none; }
+.list.dense .note { display: none; }
+.list.dense .sid { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .list.dense .code { font-size: 15px; letter-spacing: 0.14em; padding: 2px 9px; border-radius: 7px; }
 .list.dense .expiring .code { color: var(--danger); }
 .list.dense .row > .star { grid-column: 4; }
