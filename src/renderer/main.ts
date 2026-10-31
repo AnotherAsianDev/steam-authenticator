@@ -894,7 +894,7 @@ async function listScreen(): Promise<void> {
 			{ label: 'Send items…', run: () => void navigate({ name: 'trades', id }) },
 			{ label: 'Details, note and tags…', run: () => void navigate({ name: 'detail', id }) },
 			{ label: row.pending ? `Confirmations (${row.pending})…` : 'Confirmations…', run: () => void navigate({ name: 'confirms' }) },
-			{ label: 'Set up Steam profile', run: async () => { const r = await api.profileSetup(id); toast(r.ok ? 'Steam profile set up' : r.error, !r.ok); await refresh(); } },
+			{ label: 'Set up Steam profile', run: async () => { const r = await api.profileSetup(id); toast(r.ok ? 'Steam profile set up. Steam takes a minute or two to show it' : r.error, !r.ok); await refresh(); } },
 			{ label: 'Check confirmations now', run: async () => { const r = await api.refresh(id); toast(r.ok ? 'Checked' : r.error, !r.ok); await refresh(); } },
 			'sep',
 			{ head: 'Open on Steam' },
@@ -1956,7 +1956,7 @@ async function detailScreen(id: string): Promise<void> {
 						const r = await api.profileSetup(id);
 						b.disabled = false;
 						if (!r.ok) return toast(r.error, true);
-						toast('Steam profile set up');
+						toast('Steam profile set up. Steam takes a minute or two to show it');
 						void navigate({ name: 'detail', id });
 					} })))] : []),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Note and tags' }), noteRow),

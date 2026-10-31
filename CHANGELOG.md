@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.13
+- Removed the lookups that took a nickname from Steam's web pages (the profile page title, the welcome page and the hover card). They were the reason accounts showed names like "Welcome figment!". The nickname now only comes from Steam's profile data, so an account without a profile shows its login name. Names that were saved like that are dropped and read again.
+- An account without a Steam profile is recognised from Steam's profile data (empty name and the "has not yet set up their Steam Community profile" message). Such an account gets Steam's default picture.
+- Set up Steam profile no longer waits for Steam to show the result, because Steam takes a minute or two for that; it opens the editor, saves the form and says so. Reading the profile again picks up the real name once Steam shows it.
+
 ## 0.9.12
 - Steam profile setup, built from what Steam really sends: for an account without a profile Steam's public data has an empty name and says "This user has not yet set up their Steam Community profile". That is now what marks an account as "without Steam profile". Before, the app waited for a different message and never saw it.
 - The name of such an account is read from Steam's "Hello, name." welcome page (signed in as the account).

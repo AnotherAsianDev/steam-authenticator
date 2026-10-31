@@ -123,24 +123,15 @@ describe('parseOpenOffers', () => {
 describe('setupProfile', () => {
 	const ID = '76561198626397763';
 	const editor = '<input name="personaName" value="naul">';
-	const unset = '<profile><privacyMessage>This user has not yet set up their Steam Community profile.</privacyMessage></profile>';
-	it('is done once the editor was opened and Steam then shows a profile', async () => {
+	it('opens the editor, then saves the form with the name the account already has', async () => {
 		const seen: string[] = [];
-		await setupProfile(async (req) => { seen.push(`${req.method} ${req.url}`); return req.url.includes('xml=1') ? { status: 200, text: '<profile><steamID>naul</steamID></profile>' } : { status: 200, text: editor }; }, ID, 'c');
-		expect(seen).toEqual([`GET https://steamcommunity.com/profiles/${ID}/edit?welcomed=1`, `GET https://steamcommunity.com/profiles/${ID}/?xml=1`]);
-	});
-	it('saves the editor form when Steam still shows no profile, and then checks again', async () => {
-		let saved = false;
 		let body = '';
-		await setupProfile(async (req) => {
-			if (req.method === 'POST') { saved = true; body = req.body ?? ''; return { status: 200, text: '{"success":1}' }; }
-			return req.url.includes('xml=1') ? { status: 200, text: saved ? '<profile><steamID>naul</steamID></profile>' : unset } : { status: 200, text: editor };
-		}, ID, 'c');
+		await setupProfile(async (req) => { seen.push(`${req.method} ${req.url}`); if (req.method === 'POST') body = req.body ?? ''; return { status: 200, text: editor }; }, ID, 'c');
+		expect(seen).toEqual([`GET https://steamcommunity.com/profiles/${ID}/edit?welcomed=1`, `POST https://steamcommunity.com/profiles/${ID}/edit/`]);
 		expect(body).toContain('type=profileSave');
 		expect(body).toContain('personaName=naul');
 	});
-	it('says so when it did not work', async () => {
-		await expect(setupProfile(async (req) => (req.url.includes('xml=1') ? { status: 200, text: unset } : { status: 200, text: editor }), ID, 'c')).rejects.toThrow(/still shows/);
+	it('says so when Steam does not open the editor or wants a sign-in', async () => {
 		await expect(setupProfile(async () => ({ status: 200, text: '<html>Sign in</html>' }), ID, 'c')).rejects.toThrow(/profile editor/);
 		await expect(setupProfile(async () => ({ status: 302, text: '', location: 'https://steamcommunity.com/login/home' }), ID, 'c')).rejects.toThrow(/HTTP 302/);
 	});

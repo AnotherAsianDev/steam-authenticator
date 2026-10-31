@@ -42,33 +42,6 @@ export function extractPersonaName(xml: string): string | undefined {
 	return name || undefined;
 }
 
-const decodeHtml = (t: string): string => t.replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n))).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-
-/**
- * A profile that was never set up has no XML (Steam says "could not be found"), but the normal profile page still shows the name.
- * Name and picture are read from that page instead.
- */
-export function extractFromPage(html: string): { name?: string; url?: string } {
-	// An account without a profile sees "Hello, name." and a title "Welcome name!" instead of a profile.
-	const n = /<span class="actual_persona_name">([\s\S]*?)<\/span>/.exec(html)?.[1] ?? /<div id="hello">\s*Hello,\s*([\s\S]*?)\.\s*<\/div>/.exec(html)?.[1] ?? /<title>\s*Steam Community\s*::\s*Welcome\s+([\s\S]*?)!\s*<\/title>/.exec(html)?.[1] ?? /<title>\s*Steam Community\s*::\s*([\s\S]*?)<\/title>/.exec(html)?.[1];
-	// eslint-disable-next-line no-control-regex
-	const name = n ? decodeHtml(n).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 64) : '';
-	const img = /<link rel="image_src" href="(https:\/\/[^"]+)"/.exec(html)?.[1];
-	let url: string | undefined;
-	if (img) url = extractAvatarUrl(`<avatarFull>${img.replace(/(_full)?\.jpg$/, '_full.jpg')}</avatarFull>`);
-	return { ...(name && name !== 'Error' ? { name } : {}), ...(url ? { url } : {}) };
-}
-
-/** The small hover card Steam shows for any account, set up or not. */
-export function extractFromMini(html: string): { name?: string; url?: string } {
-	const n = /class="persona[^"]*">([\s\S]*?)<\/span>/.exec(html)?.[1];
-	// eslint-disable-next-line no-control-regex
-	const name = n ? decodeHtml(n).replace(/<[^>]*>/g, '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 64) : '';
-	const img = /<img src="(https:\/\/[^"]+\.jpg)"/.exec(html)?.[1];
-	const url = img ? extractAvatarUrl(`<avatarFull>${img.replace(/(_full|_medium)?\.jpg$/, '_full.jpg')}</avatarFull>`) : undefined;
-	return { ...(name ? { name } : {}), ...(url ? { url } : {}) };
-}
-
 export interface Bans {
 	/** A VAC ban is on record. */
 	vac: boolean;
@@ -141,8 +114,7 @@ export class AvatarCache {
 		private readonly dir: string,
 		private readonly onUpdate: () => void = () => undefined,
 		private readonly profileBase = 'https://steamcommunity.com/profiles',
-		private readonly onNewBan: (steamId: string, what: string) => void = () => undefined,
-		private readonly signedPage: (steamId: string) => Promise<string | undefined> = async () => undefined
+		private readonly onNewBan: (steamId: string, what: string) => void = () => undefined
 	) {
 		this.load();
 	}
@@ -153,12 +125,14 @@ export class AvatarCache {
 			for (const [id, p] of Object.entries(raw)) {
 				if (typeof p !== 'object' || p === null) continue;
 				const b = p.bans as Partial<Bans> | undefined;
+				// Names like "Welcome x!" were once taken from the page title of an account without a profile. Read those again.
+				const stale = typeof p.name === 'string' && /^Welcome .*!$/.test(p.name);
 				this.profiles[id] = {
-					...(typeof p.name === 'string' ? { name: p.name } : {}),
+					...(typeof p.name === 'string' && !stale ? { name: p.name } : {}),
 					...(typeof p.url === 'string' ? { url: p.url } : {}),
 					checked: typeof p.checked === 'number' ? p.checked : 0,
 					...(p.unset === true ? { unset: true } : {}),
-					...(p.probed === true ? { probed: true } : {}),
+					...(p.probed === true && !stale ? { probed: true } : {}),
 					...(Array.isArray(p.events) ? { events: p.events.filter((e) => typeof e?.at === 'number' && typeof e?.what === 'string').slice(-EVENTS_MAX) } : {}),
 					...(b && typeof b.vac === 'boolean' && typeof b.trade === 'string' ? { bans: { vac: b.vac, trade: b.trade, limited: b.limited === true, ...(typeof b.vacCount === 'number' ? { vacCount: b.vacCount } : {}), ...(typeof b.gameBans === 'number' ? { gameBans: b.gameBans } : {}), ...(typeof b.community === 'boolean' ? { community: b.community } : {}), ...(typeof b.daysSince === 'number' ? { daysSince: b.daysSince } : {}), ...(b.api ? { api: true as const } : {}) } } : {})
 				};
@@ -293,7 +267,7 @@ export class AvatarCache {
 		if (now - (this.checkedAt.get(steamId) ?? 0) < 300_000) return;
 		this.checkedAt.set(steamId, now);
 		const p = this.profiles[steamId];
-		const fresh = p && p.probed === true && p.name !== undefined && now - p.checked < (want.bans ? BANS_AGE_MS : MAX_AGE_MS);
+		const fresh = p && p.probed === true && (p.name !== undefined || p.unset === true) && now - p.checked < (want.bans ? BANS_AGE_MS : MAX_AGE_MS);
 		const haveBans = !want.bans || this.apiMode || p?.bans !== undefined;
 		// A missing picture is no reason to ask again when the profile has no picture address at all (failed until the retry time).
 		const haveImage = !want.image || this.has(steamId);
@@ -313,46 +287,13 @@ export class AvatarCache {
 			const xml = await fetch(`${this.profileBase}/${steamId}/?xml=1`, { signal: AbortSignal.timeout(10_000) }).then((r) => r.text());
 			const before = this.profiles[steamId];
 			const next: Profile = { ...(before ?? { checked: 0 }), checked: Date.now() };
-			let name = extractPersonaName(xml);
-			let pageUrl: string | undefined;
-			if (!name) {
-				// Steam gives no profile XML for an account that was never set up. The profile page and the hover card still carry the name.
-				const second = async (url: string, read: (h: string) => { name?: string; url?: string }): Promise<void> => {
-					if (name) return;
-					try {
-						const found = read(await fetch(url, { signal: AbortSignal.timeout(10_000) }).then((r) => r.text()));
-						name = found.name;
-						pageUrl ??= found.url;
-					} catch {
-						/* only a second chance */
-					}
-				};
-				// Steam shows a never-set-up profile only to a signed-in viewer, so the account's own session is tried first.
-				if (!name) {
-					try {
-						const html = await this.signedPage(steamId);
-						if (html) {
-							// Steam greets an account without a profile with a "Set Up Steam Profile" page.
-							if (/Set Up Steam Profile/i.test(html)) next.unset = true;
-							const found = extractFromPage(html);
-							name = found.name;
-							pageUrl ??= found.url;
-							if (!name) log.info('avatar', `${steamId}: no profile name on the signed-in page (title "${html.replace(/\s+/g, ' ').match(/<title>([^<]{0,80})/)?.[1] ?? 'none'}")`);
-						}
-					} catch {
-						/* only a second chance */
-					}
-				}
-				await second(`${this.profileBase}/${steamId}`, extractFromPage);
-				if (this.profileBase.endsWith('/profiles')) await second(`${this.profileBase.slice(0, -9)}/miniprofile/${BigInt(steamId) - 76561197960265728n}`, extractFromMini);
-				if (!name) this.failed.set(steamId, Date.now());
-			}
+			const name = extractPersonaName(xml);
 			if (name) next.name = name;
 			next.probed = true;
 			// Steam's XML for an account without a profile has an empty name and says so in the privacy message.
 			if (isProfileUnset(xml)) next.unset = true;
 			else if (/<steamID64>/.test(xml)) delete next.unset;
-			if (!/<steamID64>/.test(xml) || next.unset) log.info('avatar', `${steamId}: no profile data from Steam (${xml.length} bytes: "${xml.replace(/\s+/g, ' ').slice(0, 90)}")`);
+			if (!/<steamID64>/.test(xml) || next.unset) log.info('avatar', `${steamId}: Steam shows no profile for this account (${xml.length} bytes: "${xml.replace(/\s+/g, ' ').slice(0, 90)}")`);
 			const bans = this.apiMode ? undefined : extractBans(xml);
 			if (bans) next.bans = bans;
 			let changed = name !== before?.name || JSON.stringify(bans) !== JSON.stringify(before?.bans);
@@ -360,7 +301,7 @@ export class AvatarCache {
 			if (bans) this.noteNewBan(steamId, before?.bans, bans);
 			if (want.image) {
 				// Steam's default picture only for a profile Steam says does not exist, and never over a picture already saved.
-				const url = extractAvatarUrl(xml) ?? pageUrl ?? (name && !existsSync(this.file(steamId)) ? DEFAULT_AVATAR : undefined) ?? (/could not be found/i.test(xml) && !existsSync(this.file(steamId)) ? DEFAULT_AVATAR : undefined);
+				const url = extractAvatarUrl(xml) ?? (isProfileUnset(xml) && !existsSync(this.file(steamId)) ? DEFAULT_AVATAR : undefined);
 				if (!url) throw new Error('no avatar');
 				if (next.url !== url || !existsSync(this.file(steamId))) {
 					const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });

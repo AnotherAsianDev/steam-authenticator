@@ -90,29 +90,16 @@ describe('bans', () => {
 });
 
 
-import { extractFromPage, isProfileUnset } from '../src/main/avatar';
-describe('profile page of an account that was never set up', () => {
-	it('reads the name and picture', () => {
-		const html = '<title>Steam Community :: figment &amp; co</title><link rel="image_src" href="https://avatars.steamstatic.com/abc123.jpg"><span class="actual_persona_name">figment &amp; co</span>';
-		expect(extractFromPage(html)).toEqual({ name: 'figment & co', url: 'https://avatars.steamstatic.com/abc123_full.jpg' });
+import { isProfileUnset } from '../src/main/avatar';
+describe('profile of an account that was never set up', () => {
+	it('is recognised from Steam\'s XML: empty name and the privacy message', () => {
+		const unsetXml = '<profile><steamID64>1</steamID64><steamID><![CDATA[  ]]></steamID><privacyMessage>This user has not yet set up their Steam Community profile.</privacyMessage></profile>';
+		expect(isProfileUnset(unsetXml)).toBe(true);
+		expect(extractPersonaName(unsetXml)).toBeUndefined();
+		expect(isProfileUnset('<profile><steamID64>1</steamID64><steamID>x</steamID></profile>')).toBe(false);
 	});
-	it('ignores the error page and other hosts', () => {
-		expect(extractFromPage('<title>Steam Community :: Error</title>')).toEqual({});
-		expect(extractFromPage('<link rel="image_src" href="https://evil.example/a.jpg">')).toEqual({});
-	});
-});
-
-import { extractFromMini } from '../src/main/avatar';
-describe('hover card', () => {
-	it('reads name and picture', () => {
-		const html = '<div class="playersection_avatar"><img src="https://avatars.steamstatic.com/abc_medium.jpg"></div><span class="persona offline">figment</span>';
-		expect(extractFromMini(html)).toEqual({ name: 'figment', url: 'https://avatars.steamstatic.com/abc_full.jpg' });
-	});
-});
-
-describe('account without a Steam profile', () => {
 	it('is marked as not set up and keeps that after a restart', async () => {
-		vi.stubGlobal('fetch', async () => new Response('<?xml version="1.0"?><response><error><![CDATA[The specified profile could not be found.]]></error></response>'));
+		vi.stubGlobal('fetch', async () => new Response('<profile><steamID64>1</steamID64><steamID><![CDATA[  ]]></steamID><privacyMessage>This user has not yet set up their Steam Community profile.</privacyMessage></profile>'));
 		const dir = mkdtempSync(join(tmpdir(), 'av-'));
 		const cache = new AvatarCache(dir, () => undefined, 'https://example.test/profiles');
 		cache.ensure(ID, { image: false, bans: false });
@@ -121,14 +108,5 @@ describe('account without a Steam profile', () => {
 		expect(new AvatarCache(dir).isUnset(ID)).toBe(true);
 		cache.forget(ID);
 		expect(cache.isUnset(ID)).toBe(false);
-	});
-});
-
-describe('profile of an account that was never set up', () => {
-	it('is recognised from the XML (empty name) and the name is read from the signed-in welcome page', async () => {
-		const unsetXml = '<profile><steamID64>1</steamID64><steamID><![CDATA[  ]]></steamID><privacyMessage>This user has not yet set up their Steam Community profile.</privacyMessage></profile>';
-		expect(isProfileUnset(unsetXml)).toBe(true);
-		expect(isProfileUnset('<profile><steamID64>1</steamID64><steamID>x</steamID></profile>')).toBe(false);
-		expect(extractFromPage('<title>Steam Community :: Welcome naulsbodenbw!</title><div id="hello">Hello, naulsbodenbw.</div>').name).toBe('naulsbodenbw');
 	});
 });
