@@ -706,3 +706,15 @@ select { appearance: none; padding-right: 30px; background-image: url("data:imag
 @media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 
 .code { contain: paint; }
+
+/* ------------------------------------------- sidebar: nothing jumps -- */
+/* The icons keep the same place in both states; only the width changes and the labels fade, so opening and closing is one smooth movement. */
+.shell { transition: grid-template-columns .22s cubic-bezier(.2, .7, .2, 1); }
+.sidebar, .shell.collapsed .sidebar { padding: 22px 8px 18px; overflow: hidden; min-width: 0; }
+.nav, .shell.collapsed .nav { justify-content: flex-start; padding: 10px 12px; gap: 14px; white-space: nowrap; position: relative; border-radius: 12px; }
+.brand, .shell.collapsed .brand { justify-content: flex-start; padding: 10px 12px 22px; gap: 12px; white-space: nowrap; }
+.sidebar .label, .shell.collapsed .sidebar .label, .brand > :not(:first-child), .shell.collapsed .brand > :not(:first-child) { display: block; transition: opacity .15s; }
+.shell.collapsed .sidebar .label, .shell.collapsed .brand > :not(:first-child) { opacity: 0; pointer-events: none; }
+.nav .count, .shell.collapsed .nav .count { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 11px; transition: right .22s, top .22s, transform .22s; }
+.shell.collapsed .nav .count { right: 4px; top: 5px; transform: none; font-size: 10px; }
+.shell.collapsed .nav .label + .count { margin: 0; }

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.9.8
+- The side menu opens and closes in one smooth movement: the icons stay exactly where they are, only the width changes and the labels fade in and out. Before, labels appeared at once and some entries jumped sideways while the menu was still moving. The count badges glide to their place too.
+
 ## 0.9.7
 - Lower CPU use: the ring around the codes is redrawn 12 times a second instead of 60 (it still looks smooth), and each code box repaints on its own.
 
