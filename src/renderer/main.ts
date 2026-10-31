@@ -167,7 +167,6 @@ declare const api: {
 	openSteam(id: string, target: string, link?: string): P<void>;
 	profileSetup(id: string): P<void>;
 	profilesRefresh(id?: string): P<void>;
-	popupMenu(x: number, y: number, items: unknown[]): P<string | null>;
 	version(): P<string>;
 	updateInfo(force?: boolean): P<{ version: string; url: string } | null>;
 	updateOpen(): P<void>;
@@ -541,30 +540,88 @@ async function navigate(v: typeof view): Promise<void> {
 	else await detailScreen(v.id);
 }
 
+/** A button that must be pressed twice within a few seconds. */
 type Leaf = { label: string; run: () => void | Promise<void>; danger?: boolean; confirm?: string; disabled?: boolean; hint?: string };
 type MenuItem = { head: string } | 'sep' | Leaf | { label: string; items: Leaf[] };
-/**
- * A right-click menu at the pointer. It is a real Windows menu, so it is not limited to the app window.
- * An item with `confirm` opens a one-entry submenu that has to be chosen to go on.
- */
-async function showMenu(x: number, y: number, items: MenuItem[]): Promise<void> {
-	const actions = new Map<string, () => void | Promise<void>>();
-	const leaf = (l: Leaf): Record<string, unknown> => {
-		const id = `a${actions.size}`;
-		actions.set(id, l.run);
-		const label = l.hint === '✓' ? `✓  ${l.label}` : l.hint ? `${l.label}  (${l.hint})` : l.label;
-		return { id, label, enabled: !l.disabled };
+let closeMenu: () => void = () => undefined;
+/** A small right-click menu at the pointer. Closes on a click elsewhere, Escape, scrolling or when the window loses focus. */
+function showMenu(x: number, y: number, items: MenuItem[]): void {
+	closeMenu();
+	const menu = el('div', { class: 'ctx', role: 'menu' });
+	for (const it of items) {
+		if (it === 'sep') {
+			menu.append(el('div', { class: 'ctx-sep', role: 'separator' }));
+			continue;
+		}
+		if ('head' in it) {
+			menu.append(el('div', { class: 'ctx-head', textContent: it.head }));
+			continue;
+		}
+		const leaf = (l: Leaf, nested = false): HTMLButtonElement => {
+			const b = el('button', { class: `ctx-item${l.danger ? ' danger' : ''}${nested ? ' nested' : ''}`, type: 'button', role: 'menuitem', disabled: !!l.disabled });
+			b.append(el('span', { textContent: l.label }));
+			if (l.hint) b.append(el('small', { class: 'ctx-hint', textContent: l.hint }));
+			let armed = false;
+			b.addEventListener('click', () => {
+				if (l.confirm && !armed) {
+					armed = true;
+					b.replaceChildren(el('span', { textContent: l.confirm }));
+					return;
+				}
+				closeMenu();
+				void l.run();
+			});
+			return b;
+		};
+		if ('items' in it) {
+			// A group that opens in place, so a long list does not make the menu taller than the window.
+			const inner = it.items.map((l) => leaf(l, true));
+			for (const n of inner) n.hidden = true;
+			const toggle = el('button', { class: 'ctx-item', type: 'button', role: 'menuitem', ariaExpanded: 'false' });
+			toggle.append(el('span', { textContent: it.label }), el('small', { class: 'ctx-hint', textContent: '›' }));
+			toggle.addEventListener('click', () => {
+				const open = toggle.ariaExpanded !== 'true';
+				toggle.ariaExpanded = String(open);
+				toggle.querySelector('small')!.textContent = open ? '⌄' : '›';
+				for (const n of inner) n.hidden = !open;
+				fit();
+			});
+			menu.append(toggle, ...inner);
+			continue;
+		}
+		menu.append(leaf(it));
+	}
+	document.body.append(menu);
+	/** Keeps the whole menu inside the window: moved up or left when needed, and scrollable when it is taller than the window. */
+	function fit(): void {
+		menu.style.maxHeight = `${window.innerHeight - 8}px`;
+		const r = menu.getBoundingClientRect();
+		menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
+		menu.style.top = `${Math.max(4, Math.min(y, window.innerHeight - r.height - 4))}px`;
+	}
+	fit();
+	const away = (e: Event): void => { if (!menu.contains(e.target as Node)) closeMenu(); };
+	const key = (e: KeyboardEvent): void => {
+		if (e.key === 'Escape') return closeMenu();
+		if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+		e.preventDefault();
+		const buttons = Array.from(menu.querySelectorAll<HTMLElement>('.ctx-item:not(:disabled):not([hidden])'));
+		const at = buttons.indexOf(document.activeElement as HTMLElement);
+		buttons[(at + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
 	};
-	const template = items.map((it): Record<string, unknown> => {
-		if (it === 'sep') return { sep: true };
-		if ('head' in it) return { label: it.head, header: true };
-		if ('items' in it) return { label: it.label, items: it.items.map(leaf) };
-		if (it.confirm) return { label: it.label, items: [leaf({ label: it.confirm, run: it.run })] };
-		return leaf(it);
-	});
-	const r = await api.popupMenu(x, y, template);
-	if (!r.ok || !r.value) return;
-	await actions.get(r.value)?.();
+	closeMenu = () => {
+		menu.remove();
+		document.removeEventListener('mousedown', away, true);
+		document.removeEventListener('keydown', key, true);
+		document.removeEventListener('wheel', closeMenu, true);
+		window.removeEventListener('blur', closeMenu);
+		closeMenu = () => undefined;
+	};
+	document.addEventListener('mousedown', away, true);
+	document.addEventListener('keydown', key, true);
+	document.addEventListener('wheel', closeMenu, true);
+	window.addEventListener('blur', closeMenu);
+	menu.querySelector<HTMLElement>('.ctx-item:not(:disabled)')?.focus();
 }
 
 function confirmButton(label: string, confirmLabel: string, cls: string, run: () => void): HTMLButtonElement {
@@ -877,7 +934,7 @@ async function listScreen(): Promise<void> {
 			...(row.noProfile ? [{ label: 'Set up Steam profile', run: async () => { const r = await api.profileSetup(id); toast(r.ok ? 'Steam profile set up. Steam takes a minute or two to show it' : r.error, !r.ok); await refresh(); } }] : []),
 			'sep',
 			{ label: row.pinned ? 'Unpin' : 'Pin to the top', run: async () => { const r = await api.setMeta(id, { pinned: !row.pinned }); if (!r.ok) return toast(r.error, true); await refresh(); } },
-			{ label: 'Move to trash', confirm: 'Yes, move to trash', danger: true, run: async () => { const r = await api.remove(id); if (!r.ok) return toast(r.error, true); toast('Moved to the trash. You can restore it from Trash'); await refresh(); } }
+			{ label: 'Move to trash', confirm: 'Click again to move to trash', danger: true, run: async () => { const r = await api.remove(id); if (!r.ok) return toast(r.error, true); toast('Moved to the trash. You can restore it from Trash'); await refresh(); } }
 		]);
 	});
 	function drawLayout(): void {

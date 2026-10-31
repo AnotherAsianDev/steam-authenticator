@@ -453,6 +453,12 @@ label.f .hint.fine { margin: 0; font-size: 12px; }
 .mini svg { width: 15px; height: 15px; transition: transform 0.15s; }
 .mini.collapse svg { width: 15px; height: 15px; }
 .shell.collapsed .mini-row { justify-content: center; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0 0; }
+.ctx { position: fixed; z-index: 50; min-width: 210px; padding: 5px; background: var(--raised); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.35); display: flex; flex-direction: column; }
+.ctx-head { padding: 6px 10px 2px; font-size: 10px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.ctx-item { text-align: left; padding: 5px 10px 5px 18px; border-radius: 6px; font-size: 13px; }
+.ctx-item:hover, .ctx-item:focus-visible { background: color-mix(in srgb, var(--accent) 18%, transparent); outline: 0; }
+.ctx-item.danger { color: var(--danger); }
+.ctx-sep { height: 1px; background: var(--line); margin: 4px 2px; }
 .key-row { flex-wrap: wrap; align-items: center; }
 .key-input { min-width: 260px; flex: 1; }
 .hint.good { color: var(--ok, #3fb27f); }
@@ -469,6 +475,10 @@ label.f .hint.fine { margin: 0; font-size: 12px; }
 
 /* ---------------------------------------------------------------- polish -- */
 .flag.note { color: var(--muted); }
+.ctx-item { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; width: 100%; }
+.ctx-item:disabled { opacity: .45; cursor: default; }
+.ctx-item:disabled:hover { background: none; }
+.ctx-hint { font-size: 11px; color: var(--muted); }
 
 .key-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; padding: 10px 14px; background: color-mix(in srgb, var(--warn) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 50%, var(--line)); border-radius: 12px; }
 .key-banner[hidden] { display: none; }
@@ -493,6 +503,7 @@ label.f .hint.fine { margin: 0; font-size: 12px; }
 .content.enter .list > li:nth-child(4) { animation-delay: .09s; }
 .content.enter .list > li:nth-child(5) { animation-delay: .12s; }
 .content.enter .list > li:nth-child(n+6) { animation-delay: .15s; }
+.ctx { transform-origin: top left; animation: pop .14s ease-out; }
 .flag, .tag { animation: flagin .22s cubic-bezier(.3,1.5,.5,1); }
 .toast { animation: toastin .22s ease-out; transition: opacity .2s, transform .2s; }
 .toast.leaving { opacity: 0; transform: translate(-50%, 8px); }
@@ -503,6 +514,7 @@ body, .row, .ctx, .toast, .chip, .fchip, .search, .ov-chip, .flag, .tag, .key-ba
 button { transition: background-color .15s, border-color .15s, color .15s, transform .12s, box-shadow .15s; }
 button:active:not(:disabled) { transform: scale(.97); }
 .row:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,.14); }
+.ctx-item { transition: background-color .1s; }
 
 /* ------------------------------------------------------------ settings tabs -- */
 .tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; margin-bottom: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
@@ -714,3 +726,6 @@ select { appearance: none; padding-right: 30px; background-image: url("data:imag
 /* The logo artwork sits a little left inside its 40 px box, so it is moved 3 px to share the centre line of the menu icons in both states. */
 .brand, .shell.collapsed .brand { padding: 10px 0 22px 5px; gap: 12px; }
 
+.ctx { overflow-y: auto; overscroll-behavior: contain; }
+.ctx-item.nested { padding-left: 32px; }
+.ctx-item[hidden] { display: none; }

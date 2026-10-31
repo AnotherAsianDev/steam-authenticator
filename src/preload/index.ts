@@ -41,7 +41,6 @@ contextBridge.exposeInMainWorld('api', {
 	addFolder: () => call('addFolder'),
 	refreshAll: () => call('refreshAll'),
 	openSteam: (id: string, target: string, link?: string) => call('openSteam', id, target, link),
-	popupMenu: (x: number, y: number, items: unknown[]) => call('popupMenu', x, y, items),
 	profilesRefresh: (id?: string) => call('profilesRefresh', id),
 	profileSetup: (id: string) => call('profileSetup', id),
 	todo: () => call('todo'),
