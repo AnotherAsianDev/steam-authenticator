@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, screen, shell, type MenuItemConstructorOptions } from 'electron';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { Accounts } from './accounts';
@@ -495,6 +495,28 @@ function registerIpc(): void {
 		avatars.forget(id);
 		log.info('profile', `${accounts.get(id)!.accountName}: Steam profile set up`);
 	});
+	/**
+	 * A right-click menu drawn by Windows itself, so it can reach outside the app window. The renderer sends what to show and gets back the id that was chosen.
+	 * Items are { id, label, enabled, header } or { label, items } for a group.
+	 */
+	handle('popupMenu', async (x: unknown, y: unknown, items: unknown) => {
+		if (!win || typeof x !== 'number' || typeof y !== 'number' || !Array.isArray(items)) throw new UserError('Invalid menu');
+		let chosen: string | null = null;
+		const build = (list: unknown[], depth: number): MenuItemConstructorOptions[] =>
+			list.slice(0, 60).map((raw): MenuItemConstructorOptions => {
+				const it = raw as { id?: unknown; label?: unknown; enabled?: unknown; header?: unknown; sep?: unknown; items?: unknown };
+				if (it.sep) return { type: 'separator' };
+				const label = typeof it.label === 'string' ? it.label.slice(0, 120) : '';
+				if (Array.isArray(it.items) && depth < 2) return { label, submenu: build(it.items, depth + 1) };
+				if (it.header) return { label, enabled: false };
+				const id = typeof it.id === 'string' ? it.id : '';
+				return { label, enabled: it.enabled !== false, click: () => { chosen = id; } };
+			});
+		const menu = Menu.buildFromTemplate(build(items, 0));
+		return new Promise<string | null>((resolve) => {
+			menu.popup({ window: win!, x: Math.round(x), y: Math.round(y), callback: () => setTimeout(() => resolve(chosen), 40) });
+		});
+	});
 	// ---- Sending items by trade offer ----
 	const gameOf = (key: unknown) => {
 		const g = GAMES.find((x) => x.key === key);
@@ -876,6 +898,7 @@ function registerIpc(): void {
 	handle('settings', () => settings.get());
 	handle('setSettings', (patch: unknown) => {
 		const next = settings.update(patch);
+		nativeTheme.themeSource = next.theme;
 		avatars.recheck();
 		schedulePolling();
 		watchFolders(externalFolders());
@@ -967,6 +990,7 @@ async function startApp(): Promise<void> {
 	// No menu bar: the window has its own title bar, and Alt must not pop up a stray one.
 	Menu.setApplicationMenu(null);
 	registerIpc();
+	nativeTheme.themeSource = settings.get().theme;
 	mkdirSync(store.dir, { recursive: true });
 	createWindow();
 	log.info('app', `Started version ${app.getVersion()}, ${accounts.ids().length} account(s), ${layout.portable ? 'portable' : 'user data'} folder`);
