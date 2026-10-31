@@ -101,3 +101,11 @@ describe('profile page of an account that was never set up', () => {
 		expect(extractFromPage('<link rel="image_src" href="https://evil.example/a.jpg">')).toEqual({});
 	});
 });
+
+import { extractFromMini } from '../src/main/avatar';
+describe('hover card', () => {
+	it('reads name and picture', () => {
+		const html = '<div class="playersection_avatar"><img src="https://avatars.steamstatic.com/abc_medium.jpg"></div><span class="persona offline">figment</span>';
+		expect(extractFromMini(html)).toEqual({ name: 'figment', url: 'https://avatars.steamstatic.com/abc_full.jpg' });
+	});
+});

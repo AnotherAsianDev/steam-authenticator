@@ -55,6 +55,16 @@ export function extractFromPage(html: string): { name?: string; url?: string } {
 	return { ...(name && name !== 'Error' ? { name } : {}), ...(url ? { url } : {}) };
 }
 
+/** The small hover card Steam shows for any account, set up or not. */
+export function extractFromMini(html: string): { name?: string; url?: string } {
+	const n = /class="persona[^"]*">([\s\S]*?)<\/span>/.exec(html)?.[1];
+	// eslint-disable-next-line no-control-regex
+	const name = n ? decodeHtml(n).replace(/<[^>]*>/g, '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 64) : '';
+	const img = /<img src="(https:\/\/[^"]+\.jpg)"/.exec(html)?.[1];
+	const url = img ? extractAvatarUrl(`<avatarFull>${img.replace(/(_full|_medium)?\.jpg$/, '_full.jpg')}</avatarFull>`) : undefined;
+	return { ...(name ? { name } : {}), ...(url ? { url } : {}) };
+}
+
 export interface Bans {
 	/** A VAC ban is on record. */
 	vac: boolean;
@@ -123,7 +133,8 @@ export class AvatarCache {
 		private readonly dir: string,
 		private readonly onUpdate: () => void = () => undefined,
 		private readonly profileBase = 'https://steamcommunity.com/profiles',
-		private readonly onNewBan: (steamId: string, what: string) => void = () => undefined
+		private readonly onNewBan: (steamId: string, what: string) => void = () => undefined,
+		private readonly signedPage: (steamId: string) => Promise<string | undefined> = async () => undefined
 	) {
 		this.load();
 	}
@@ -256,7 +267,7 @@ export class AvatarCache {
 		if (now - (this.checkedAt.get(steamId) ?? 0) < 300_000) return;
 		this.checkedAt.set(steamId, now);
 		const p = this.profiles[steamId];
-		const fresh = p && (p.name !== undefined || p.url !== undefined) && now - p.checked < (want.bans ? BANS_AGE_MS : MAX_AGE_MS);
+		const fresh = p && p.name !== undefined && now - p.checked < (want.bans ? BANS_AGE_MS : MAX_AGE_MS);
 		const haveBans = !want.bans || this.apiMode || p?.bans !== undefined;
 		// A missing picture is no reason to ask again when the profile has no picture address at all (failed until the retry time).
 		const haveImage = !want.image || this.has(steamId);
@@ -278,15 +289,35 @@ export class AvatarCache {
 			const next: Profile = { ...(before ?? { checked: 0 }), checked: Date.now() };
 			let name = extractPersonaName(xml);
 			let pageUrl: string | undefined;
-			if (!name && !/<steamID64>/.test(xml)) {
-				try {
-					const html = await fetch(`${this.profileBase}/${steamId}`, { signal: AbortSignal.timeout(10_000) }).then((r) => r.text());
-					const page = extractFromPage(html);
-					name = page.name;
-					pageUrl = page.url;
-				} catch {
-					/* the page is only a second chance */
+			if (!name) {
+				// Steam gives no profile XML for an account that was never set up. The profile page and the hover card still carry the name.
+				const second = async (url: string, read: (h: string) => { name?: string; url?: string }): Promise<void> => {
+					if (name) return;
+					try {
+						const found = read(await fetch(url, { signal: AbortSignal.timeout(10_000) }).then((r) => r.text()));
+						name = found.name;
+						pageUrl ??= found.url;
+					} catch {
+						/* only a second chance */
+					}
+				};
+				// Steam shows a never-set-up profile only to a signed-in viewer, so the account's own session is tried first.
+				if (!name) {
+					try {
+						const html = await this.signedPage(steamId);
+						if (html) {
+							const found = extractFromPage(html);
+							name = found.name;
+							pageUrl ??= found.url;
+							if (!name) log.info('avatar', `${steamId}: no profile name on the signed-in page (title "${html.replace(/\s+/g, ' ').match(/<title>([^<]{0,80})/)?.[1] ?? 'none'}")`);
+						}
+					} catch {
+						/* only a second chance */
+					}
 				}
+				await second(`${this.profileBase}/${steamId}`, extractFromPage);
+				if (this.profileBase.endsWith('/profiles')) await second(`${this.profileBase.slice(0, -9)}/miniprofile/${BigInt(steamId) - 76561197960265728n}`, extractFromMini);
+				if (!name) this.failed.set(steamId, Date.now());
 			}
 			if (name) next.name = name;
 			const bans = this.apiMode ? undefined : extractBans(xml);

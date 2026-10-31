@@ -79,6 +79,13 @@ const avatars = new AvatarCache(join(data, 'avatars'), () => win?.webContents.se
 	const name = accounts.get(steamId)?.accountName ?? steamId;
 	log.warn('bans', `${name} now has ${what}`);
 	notice(`${name} now has ${what}`, true);
+}, async (steamId) => {
+	try {
+		const res = await fetch(`https://steamcommunity.com/profiles/${steamId}`, { headers: { Cookie: sessionCookie(steamId, await accounts.webToken(steamId)), 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36' }, signal: AbortSignal.timeout(10_000) });
+		return res.ok ? await res.text() : undefined;
+	} catch {
+		return undefined;
+	}
 });
 const accounts = new Accounts({
 	cache: new StateCache(join(data, 'cache.json')),

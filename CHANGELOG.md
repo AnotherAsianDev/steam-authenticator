@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.6
+- More modern controls with the same colors: quiet outlined buttons with a soft hover, one filled main action with a gentle glow, dropdowns with a chevron, a clear accent glow on the field you are in, a raised pill for the active tab, softer card edges with a faint top highlight, Cascadia Mono for the codes, a visible keyboard focus ring.
+- Nickname for accounts without a set-up Steam profile, third try: the app asks for the profile page as the account itself (with its saved sign-in), then the public page, then Steam's hover card. An account with a picture but no name is asked again at most once an hour. If no name is found, the log says what the page contained.
+- The window respects the Windows "reduce motion" setting.
+
 ## 0.9.5
 - Trades: reading another account's trade link from Steam is removed, because Steam does not hand it out reliably. Items are sent to a trade link you paste, or to one you saved (the saved links stay, with Save as and Remove). The "Your accounts" entries in the Send to lists are gone from both the single and the several-accounts screen.
 - Cleanup: removed the code and styles left over from the removed trade-link lookup, the old Check account and earlier layouts.
