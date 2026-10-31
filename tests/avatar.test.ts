@@ -109,3 +109,17 @@ describe('hover card', () => {
 		expect(extractFromMini(html)).toEqual({ name: 'figment', url: 'https://avatars.steamstatic.com/abc_full.jpg' });
 	});
 });
+
+describe('account without a Steam profile', () => {
+	it('is marked as not set up and keeps that after a restart', async () => {
+		vi.stubGlobal('fetch', async () => new Response('<?xml version="1.0"?><response><error><![CDATA[The specified profile could not be found.]]></error></response>'));
+		const dir = mkdtempSync(join(tmpdir(), 'av-'));
+		const cache = new AvatarCache(dir, () => undefined, 'https://example.test/profiles');
+		cache.ensure(ID, { image: false, bans: false });
+		for (let i = 0; i < 50 && !cache.isUnset(ID); i++) await new Promise((r) => setTimeout(r, 20));
+		expect(cache.isUnset(ID)).toBe(true);
+		expect(new AvatarCache(dir).isUnset(ID)).toBe(true);
+		cache.forget(ID);
+		expect(cache.isUnset(ID)).toBe(false);
+	});
+});

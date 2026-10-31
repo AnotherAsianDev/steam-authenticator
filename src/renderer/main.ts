@@ -2811,7 +2811,7 @@ function bulkScreen(all: Row[], saved: { name: string; link: string }[]): void {
 				el('span', { textContent: nameOf(id) }),
 				el('span', { textContent: p.error ? '–' : String(p.assets.length) }),
 				el('span', { textContent: p.error ? '–' : String(Math.ceil(p.assets.length / OFFER_SIZE)) }),
-				el('span', { class: p.error ? 'error' : 'hint', textContent: p.error || (state ? state.get(id) ?? 'waiting' : p.locked ? String(p.locked) : '') }))),
+				el('span', { class: p.error ? 'error' : 'hint', textContent: p.error || (state ? state.get(id) ?? (p.assets.length ? 'waiting' : 'nothing to send') : p.locked ? String(p.locked) : '') }))),
 			el('div', { class: 'bulk-row foot' }, el('strong', { textContent: 'Total' }), el('strong', { textContent: String(total) }), el('strong', { textContent: String(offers) }), el('span', { class: 'hint', textContent: empty ? `${empty} account${empty === 1 ? ' has' : 's have'} nothing to send and ${empty === 1 ? 'is' : 'are'} skipped` : '' }))
 		);
 	}

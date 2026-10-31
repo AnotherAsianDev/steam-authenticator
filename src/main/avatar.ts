@@ -347,6 +347,7 @@ export class AvatarCache {
 			next.probed = true;
 			if (/<steamID64>/.test(xml)) delete next.unset;
 			else if (xml.trim().length > 0) next.unset = true;
+			if (!/<steamID64>/.test(xml)) log.info('avatar', `${steamId}: no profile data from Steam (${xml.length} bytes: "${xml.replace(/\s+/g, ' ').slice(0, 90)}")`);
 			const bans = this.apiMode ? undefined : extractBans(xml);
 			if (bans) next.bans = bans;
 			let changed = name !== before?.name || JSON.stringify(bans) !== JSON.stringify(before?.bans);

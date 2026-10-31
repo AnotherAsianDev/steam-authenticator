@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.11
+- Trades, several accounts: an account with nothing to send now shows "nothing to send" instead of "waiting".
+- Profile setup: when Steam gives no profile data for an account, the log now says what it answered (first 90 characters), so the detection can be checked against what Steam really sends.
+
 ## 0.9.10
 - Steam profile setup, detection fixed: an account counts as "without Steam profile" when Steam returns no profile data for it, or when the signed-in page shows Steam's "Set Up Steam Profile" welcome. Every profile is read once more so accounts saved by an older version are checked too. The button on the account page and the "N without Steam profile" mark on the Accounts page now appear for them. A "Set up Steam profile" entry in the right-click menu works for any account.
 - Opening a saved trade link signed in is now only in the right-click menu of an account (one entry per saved link) and in the menu of the signed-in Steam window. The extra button in the Send panel is gone.
