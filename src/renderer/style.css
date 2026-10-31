@@ -725,3 +725,7 @@ select { appearance: none; padding-right: 30px; background-image: url("data:imag
 .dlg-list li { color: var(--warn); }
 /* The logo artwork sits a little left inside its 40 px box, so it is moved 3 px to share the centre line of the menu icons in both states. */
 .brand, .shell.collapsed .brand { padding: 10px 0 22px 5px; gap: 12px; }
+
+.ctx { overflow-y: auto; overscroll-behavior: contain; }
+.ctx-item.nested { padding-left: 32px; }
+.ctx-item[hidden] { display: none; }

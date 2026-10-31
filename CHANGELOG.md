@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.17
+- Right-click menu: it always stays inside the window. Before, it could be taller than the window and get cut off; now it is moved up as far as needed and scrolls if the window is very small.
+- Right-click menu reorganised into Copy (code, username, password, SteamID64), Go to (details, confirmations, send items), On Steam (profile page, inventory, trade offers, saved trade links, opened signed in), Keep up to date (check confirmations, read the Steam profile again, set up the Steam profile when it is missing), then pin and move to trash. The saved trade links fold into one entry that opens in place.
+- The logo is centered on the menu icons when the menu is collapsed.
+
 ## 0.9.16
 - Read the Steam profiles again: the round-arrow button at the top of the Accounts page now reads all profiles again (names, pictures, bans). Before, it was "check confirmations now", which the app does by itself and which has its own button on the Confirmations page. For one account: "Read profile again" on its account page, and "Read Steam profile again" in its right-click menu.
 - The confirmation window for "N without Steam profile" lists the accounts that will be set up, and the mark is amber like the icon on the rows.

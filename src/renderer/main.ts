@@ -541,7 +541,8 @@ async function navigate(v: typeof view): Promise<void> {
 }
 
 /** A button that must be pressed twice within a few seconds. */
-type MenuItem = { head: string } | 'sep' | { label: string; run: () => void | Promise<void>; danger?: boolean; confirm?: string; disabled?: boolean; hint?: string };
+type Leaf = { label: string; run: () => void | Promise<void>; danger?: boolean; confirm?: string; disabled?: boolean; hint?: string };
+type MenuItem = { head: string } | 'sep' | Leaf | { label: string; items: Leaf[] };
 let closeMenu: () => void = () => undefined;
 /** A small right-click menu at the pointer. Closes on a click elsewhere, Escape, scrolling or when the window loses focus. */
 function showMenu(x: number, y: number, items: MenuItem[]): void {
@@ -556,31 +557,55 @@ function showMenu(x: number, y: number, items: MenuItem[]): void {
 			menu.append(el('div', { class: 'ctx-head', textContent: it.head }));
 			continue;
 		}
-		const b = el('button', { class: `ctx-item${it.danger ? ' danger' : ''}`, type: 'button', role: 'menuitem', disabled: !!it.disabled });
-		b.append(el('span', { textContent: it.label }));
-		if (it.hint) b.append(el('small', { class: 'ctx-hint', textContent: it.hint }));
-		let armed = false;
-		b.addEventListener('click', () => {
-			if (it.confirm && !armed) {
-				armed = true;
-				b.replaceChildren(el('span', { textContent: it.confirm }));
-				return;
-			}
-			closeMenu();
-			void it.run();
-		});
-		menu.append(b);
+		const leaf = (l: Leaf, nested = false): HTMLButtonElement => {
+			const b = el('button', { class: `ctx-item${l.danger ? ' danger' : ''}${nested ? ' nested' : ''}`, type: 'button', role: 'menuitem', disabled: !!l.disabled });
+			b.append(el('span', { textContent: l.label }));
+			if (l.hint) b.append(el('small', { class: 'ctx-hint', textContent: l.hint }));
+			let armed = false;
+			b.addEventListener('click', () => {
+				if (l.confirm && !armed) {
+					armed = true;
+					b.replaceChildren(el('span', { textContent: l.confirm }));
+					return;
+				}
+				closeMenu();
+				void l.run();
+			});
+			return b;
+		};
+		if ('items' in it) {
+			// A group that opens in place, so a long list does not make the menu taller than the window.
+			const inner = it.items.map((l) => leaf(l, true));
+			for (const n of inner) n.hidden = true;
+			const toggle = el('button', { class: 'ctx-item', type: 'button', role: 'menuitem', ariaExpanded: 'false' });
+			toggle.append(el('span', { textContent: it.label }), el('small', { class: 'ctx-hint', textContent: '›' }));
+			toggle.addEventListener('click', () => {
+				const open = toggle.ariaExpanded !== 'true';
+				toggle.ariaExpanded = String(open);
+				toggle.querySelector('small')!.textContent = open ? '⌄' : '›';
+				for (const n of inner) n.hidden = !open;
+				fit();
+			});
+			menu.append(toggle, ...inner);
+			continue;
+		}
+		menu.append(leaf(it));
 	}
 	document.body.append(menu);
-	const r = menu.getBoundingClientRect();
-	menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
-	menu.style.top = `${Math.max(4, Math.min(y, window.innerHeight - r.height - 4))}px`;
+	/** Keeps the whole menu inside the window: moved up or left when needed, and scrollable when it is taller than the window. */
+	function fit(): void {
+		menu.style.maxHeight = `${window.innerHeight - 8}px`;
+		const r = menu.getBoundingClientRect();
+		menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
+		menu.style.top = `${Math.max(4, Math.min(y, window.innerHeight - r.height - 4))}px`;
+	}
+	fit();
 	const away = (e: Event): void => { if (!menu.contains(e.target as Node)) closeMenu(); };
 	const key = (e: KeyboardEvent): void => {
 		if (e.key === 'Escape') return closeMenu();
 		if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
 		e.preventDefault();
-		const buttons = Array.from(menu.querySelectorAll<HTMLElement>('.ctx-item:not(:disabled)'));
+		const buttons = Array.from(menu.querySelectorAll<HTMLElement>('.ctx-item:not(:disabled):not([hidden])'));
 		const at = buttons.indexOf(document.activeElement as HTMLElement);
 		buttons[(at + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
 	};
@@ -892,21 +917,23 @@ async function listScreen(): Promise<void> {
 			{ label: 'Password', run: copy('password', 'Password copied'), disabled: !row.hasPassword, hint: row.hasPassword ? '' : 'not saved' },
 			{ label: 'SteamID64', run: copy('steamId', 'SteamID64 copied') },
 			'sep',
-			{ head: 'Account' },
-			{ label: row.pinned ? 'Unpin' : 'Pin to the top', run: async () => { const r = await api.setMeta(id, { pinned: !row.pinned }); if (!r.ok) return toast(r.error, true); await refresh(); } },
-			{ label: 'Send items…', run: () => void navigate({ name: 'trades', id }) },
+			{ head: 'Go to' },
 			{ label: 'Details, note and tags…', run: () => void navigate({ name: 'detail', id }) },
 			{ label: row.pending ? `Confirmations (${row.pending})…` : 'Confirmations…', run: () => void navigate({ name: 'confirms' }) },
-			{ label: 'Read Steam profile again', run: async () => { await api.profilesRefresh(id); toast('Reading the Steam profile again'); await refresh(); } },
-			{ label: 'Set up Steam profile', run: async () => { const r = await api.profileSetup(id); toast(r.ok ? 'Steam profile set up. Steam takes a minute or two to show it' : r.error, !r.ok); await refresh(); } },
+			{ label: 'Send items…', run: () => void navigate({ name: 'trades', id }) },
+			'sep',
+			{ head: 'On Steam' },
+			{ label: 'Profile page', run: async () => { const r = await api.openProfile(id); if (!r.ok) toast(r.error, true); } },
+			{ label: 'Inventory, signed in', run: web('inventory') },
+			{ label: 'Trade offers, signed in', run: web('tradeoffers') },
+			...(saved.ok && saved.value.length ? [{ label: `Saved trade links, signed in (${saved.value.length})`, items: saved.value.map((l) => ({ label: l.name, run: async (): Promise<void> => { const r = await api.openSteam(id, 'tradelink', l.link); if (!r.ok) toast(r.error, true); } })) }] : []),
+			'sep',
+			{ head: 'Keep up to date' },
 			{ label: 'Check confirmations now', run: async () => { const r = await api.refresh(id); toast(r.ok ? 'Checked' : r.error, !r.ok); await refresh(); } },
+			{ label: 'Read Steam profile again', run: async () => { await api.profilesRefresh(id); toast('Reading the Steam profile again'); await refresh(); } },
+			...(row.noProfile ? [{ label: 'Set up Steam profile', run: async () => { const r = await api.profileSetup(id); toast(r.ok ? 'Steam profile set up. Steam takes a minute or two to show it' : r.error, !r.ok); await refresh(); } }] : []),
 			'sep',
-			{ head: 'Open on Steam' },
-			{ label: 'Profile', run: async () => { const r = await api.openProfile(id); if (!r.ok) toast(r.error, true); } },
-			{ label: 'Inventory (signed in)', run: web('inventory') },
-			{ label: 'Trade offers (signed in)', run: web('tradeoffers') },
-			...(saved.ok ? saved.value.map((l) => ({ label: `Trade link: ${l.name} (signed in)`, run: async (): Promise<void> => { const r = await api.openSteam(id, 'tradelink', l.link); if (!r.ok) toast(r.error, true); } })) : []),
-			'sep',
+			{ label: row.pinned ? 'Unpin' : 'Pin to the top', run: async () => { const r = await api.setMeta(id, { pinned: !row.pinned }); if (!r.ok) return toast(r.error, true); await refresh(); } },
 			{ label: 'Move to trash', confirm: 'Click again to move to trash', danger: true, run: async () => { const r = await api.remove(id); if (!r.ok) return toast(r.error, true); toast('Moved to the trash. You can restore it from Trash'); await refresh(); } }
 		]);
 	});
