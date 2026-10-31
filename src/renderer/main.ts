@@ -867,12 +867,13 @@ async function listScreen(): Promise<void> {
 			}
 		}))]);
 	});
-	list.addEventListener('contextmenu', (e) => {
+	list.addEventListener('contextmenu', async (e) => {
 		const li = (e.target as HTMLElement).closest<HTMLLIElement>('li.row');
 		const row = li && lastRows.find((r) => r.steamId === li.dataset['id']);
 		if (!row) return;
 		e.preventDefault();
 		const id = row.steamId;
+		const saved = await api.tradeLinks();
 		const copy = (field: string, done: string) => async (): Promise<void> => {
 			const r = await api.copyField(id, field);
 			toast(r.ok ? done : r.error, !r.ok);
@@ -893,12 +894,14 @@ async function listScreen(): Promise<void> {
 			{ label: 'Send items…', run: () => void navigate({ name: 'trades', id }) },
 			{ label: 'Details, note and tags…', run: () => void navigate({ name: 'detail', id }) },
 			{ label: row.pending ? `Confirmations (${row.pending})…` : 'Confirmations…', run: () => void navigate({ name: 'confirms' }) },
+			{ label: 'Set up Steam profile', run: async () => { const r = await api.profileSetup(id); toast(r.ok ? 'Steam profile set up' : r.error, !r.ok); await refresh(); } },
 			{ label: 'Check confirmations now', run: async () => { const r = await api.refresh(id); toast(r.ok ? 'Checked' : r.error, !r.ok); await refresh(); } },
 			'sep',
 			{ head: 'Open on Steam' },
 			{ label: 'Profile', run: async () => { const r = await api.openProfile(id); if (!r.ok) toast(r.error, true); } },
 			{ label: 'Inventory (signed in)', run: web('inventory') },
 			{ label: 'Trade offers (signed in)', run: web('tradeoffers') },
+			...(saved.ok ? saved.value.map((l) => ({ label: `Trade link: ${l.name} (signed in)`, run: async (): Promise<void> => { const r = await api.openSteam(id, 'tradelink', l.link); if (!r.ok) toast(r.error, true); } })) : []),
 			'sep',
 			{ label: 'Move to trash', confirm: 'Click again to move to trash', danger: true, run: async () => { const r = await api.remove(id); if (!r.ok) return toast(r.error, true); toast('Moved to the trash. You can restore it from Trash'); await refresh(); } }
 		]);
@@ -2390,13 +2393,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 		savedLinks = r.value;
 		drawTargets();
 	} });
-	const openBtn = el('button', { class: 'small', type: 'button', textContent: 'Open signed in', title: 'Opens this trade link in a Steam window signed in as the sending account', onclick: async () => {
-		const link = targetSel.value.startsWith('l:') ? targetSel.value.slice(2) : linkInput.value.trim();
-		const r = await api.openSteam(id, 'tradelink', link);
-		if (!r.ok) toast(r.error, true);
-	} });
-	const showLinkBoxes = (): void => {
-		openBtn.hidden = !(targetSel.value.startsWith('l:') || (targetSel.value === 'paste' && linkInput.value.trim())); linkBox.hidden = targetSel.value !== 'paste'; removeBtn.hidden = !targetSel.value.startsWith('l:'); };
+	const showLinkBoxes = (): void => { linkBox.hidden = targetSel.value !== 'paste'; removeBtn.hidden = !targetSel.value.startsWith('l:'); };
 	function drawTargets(select = ''): void {
 		const group = (label: string, opts: HTMLOptionElement[]): HTMLElement[] => {
 			if (!opts.length) return [];
@@ -2490,7 +2487,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 		sendBtn.disabled = busy || n === 0 || !targetParam();
 		confirmBox.hidden = true;
 	}
-	linkInput.addEventListener('input', () => { showLinkBoxes(); drawSummary(); });
+	linkInput.addEventListener('input', drawSummary);
 
 	async function load(): Promise<void> {
 		busy = true;
@@ -2566,7 +2563,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 			lockedBox,
 			el('section', { class: 'send-panel' },
 				el('div', { class: 'send-panel-head' }, count),
-				field('Send to', el('div', { class: 'target-row' }, targetSel, removeBtn, openBtn)),
+				field('Send to', el('div', { class: 'target-row' }, targetSel, removeBtn)),
 				linkBox,
 				el('div', { class: 'send-panel-foot' }, sendBtn)),
 			confirmBox,

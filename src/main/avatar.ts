@@ -114,6 +114,8 @@ interface Profile {
 	bans?: Bans;
 	/** Steam has no Community profile for this account yet (it was never set up). */
 	unset?: boolean;
+	/** Read by a version that knows about `unset`; older records are read once more. */
+	probed?: boolean;
 	/** What changed about the bans and when, newest last. */
 	events?: { at: number; what: string }[];
 }
@@ -152,6 +154,7 @@ export class AvatarCache {
 					...(typeof p.url === 'string' ? { url: p.url } : {}),
 					checked: typeof p.checked === 'number' ? p.checked : 0,
 					...(p.unset === true ? { unset: true } : {}),
+					...(p.probed === true ? { probed: true } : {}),
 					...(Array.isArray(p.events) ? { events: p.events.filter((e) => typeof e?.at === 'number' && typeof e?.what === 'string').slice(-EVENTS_MAX) } : {}),
 					...(b && typeof b.vac === 'boolean' && typeof b.trade === 'string' ? { bans: { vac: b.vac, trade: b.trade, limited: b.limited === true, ...(typeof b.vacCount === 'number' ? { vacCount: b.vacCount } : {}), ...(typeof b.gameBans === 'number' ? { gameBans: b.gameBans } : {}), ...(typeof b.community === 'boolean' ? { community: b.community } : {}), ...(typeof b.daysSince === 'number' ? { daysSince: b.daysSince } : {}), ...(b.api ? { api: true as const } : {}) } } : {})
 				};
@@ -286,7 +289,7 @@ export class AvatarCache {
 		if (now - (this.checkedAt.get(steamId) ?? 0) < 300_000) return;
 		this.checkedAt.set(steamId, now);
 		const p = this.profiles[steamId];
-		const fresh = p && p.name !== undefined && now - p.checked < (want.bans ? BANS_AGE_MS : MAX_AGE_MS);
+		const fresh = p && p.probed === true && p.name !== undefined && now - p.checked < (want.bans ? BANS_AGE_MS : MAX_AGE_MS);
 		const haveBans = !want.bans || this.apiMode || p?.bans !== undefined;
 		// A missing picture is no reason to ask again when the profile has no picture address at all (failed until the retry time).
 		const haveImage = !want.image || this.has(steamId);
@@ -325,6 +328,8 @@ export class AvatarCache {
 					try {
 						const html = await this.signedPage(steamId);
 						if (html) {
+							// Steam greets an account without a profile with a "Set Up Steam Profile" page.
+							if (/Set Up Steam Profile/i.test(html)) next.unset = true;
 							const found = extractFromPage(html);
 							name = found.name;
 							pageUrl ??= found.url;
@@ -339,8 +344,9 @@ export class AvatarCache {
 				if (!name) this.failed.set(steamId, Date.now());
 			}
 			if (name) next.name = name;
+			next.probed = true;
 			if (/<steamID64>/.test(xml)) delete next.unset;
-			else if (/could not be found/i.test(xml)) next.unset = true;
+			else if (xml.trim().length > 0) next.unset = true;
 			const bans = this.apiMode ? undefined : extractBans(xml);
 			if (bans) next.bans = bans;
 			let changed = name !== before?.name || JSON.stringify(bans) !== JSON.stringify(before?.bans);

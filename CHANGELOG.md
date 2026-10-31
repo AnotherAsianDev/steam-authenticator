@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.10
+- Steam profile setup, detection fixed: an account counts as "without Steam profile" when Steam returns no profile data for it, or when the signed-in page shows Steam's "Set Up Steam Profile" welcome. Every profile is read once more so accounts saved by an older version are checked too. The button on the account page and the "N without Steam profile" mark on the Accounts page now appear for them. A "Set up Steam profile" entry in the right-click menu works for any account.
+- Opening a saved trade link signed in is now only in the right-click menu of an account (one entry per saved link) and in the menu of the signed-in Steam window. The extra button in the Send panel is gone.
+
 ## 0.9.9
 - Set up the Steam profile from the app: an account that never opened its Steam Community profile (Steam's "Hello, ... Set Up Steam Profile" page) gets a "Set up Steam profile" button on its account page, and the Accounts page shows a "N without Steam profile" mark that sets up all of them (click twice to confirm, 1.5 seconds between accounts). It opens the same page as Steam's own button. Needed for trading and for the nickname and picture to appear.
 - Trades: "Open signed in" next to a saved or pasted trade link opens it in a Steam window signed in as the sending account.
