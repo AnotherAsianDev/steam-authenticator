@@ -33,10 +33,11 @@ export function extractAvatarUrl(xml: string): string | undefined {
 
 /**
  * The name on a profile page. An account without a profile has an empty name in Steam's XML even when its name was changed; the page still shows it.
- * Only the name element of the profile itself is used, never a page title.
+ * Only the name element of the profile (or the "Hello, name." greeting of the signed-in welcome page) is used, never a page title.
  */
 export function extractPageName(html: string): string | undefined {
-	const raw = /<span class="actual_persona_name">([\s\S]*?)<\/span>/.exec(html)?.[1];
+	// The profile's own name element; the signed-in welcome page of an account without a profile greets it by name instead ("Hello, name.").
+	const raw = /<span class="actual_persona_name">([\s\S]*?)<\/span>/.exec(html)?.[1] ?? /<div id="hello">\s*Hello,\s*([\s\S]*?)\.\s*<\/div>/.exec(html)?.[1];
 	if (!raw) return undefined;
 	const text = raw.replace(/<[^>]*>/g, '').replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n))).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 	// eslint-disable-next-line no-control-regex

@@ -114,7 +114,8 @@ describe('profile of an account that was never set up', () => {
 describe('name from the profile page', () => {
 	it('reads the name element only, without invisible characters', () => {
 		expect(extractPageName('<title>Steam Community :: chotaingop</title><span class="actual_persona_name">chota&amp;ingop\u{e0021}</span>')).toBe('chota&ingop');
-		expect(extractPageName('<title>Steam Community :: Welcome x!</title><div id="hello">Hello, x.</div>')).toBeUndefined();
+		expect(extractPageName('<title>Steam Community :: Welcome x!</title><div id="hello">Hello, nick &amp; co.</div>')).toBe('nick & co');
+		expect(extractPageName('<title>Steam Community :: Welcome x!</title>')).toBeUndefined();
 		expect(extractPageName('<span class="actual_persona_name">\u200b </span>')).toBeUndefined();
 	});
 });

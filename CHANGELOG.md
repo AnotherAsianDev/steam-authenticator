@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.9.15
+- Nickname of an account without a Steam profile: after the public profile page, the app also reads the "Hello, name." greeting of the page the account itself sees when signed in (the one with the "Set Up Steam Profile" button). Only that greeting is used, never a page title.
+
 ## 0.9.14
 - Accounts without a Steam profile now have a mark on their row (a dashed person icon, in its own fixed place after the sign-in clock). Click it to open the account, where "Set up Steam profile" is.
 - Nickname of an account without a profile whose name was changed anyway: Steam's profile data leaves the name empty, so the app now reads the name element of the profile page (public first, then as the account itself). Page titles and welcome texts are not used, so no "Welcome x!" names. Invisible characters are removed from names.
