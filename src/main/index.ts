@@ -487,7 +487,7 @@ function registerIpc(): void {
 	});
 	handle('profileSetup', async (steamId: unknown) => {
 		const id = known(steamId);
-		await setupProfile(fetchHttp, await cookieOf(id));
+		await setupProfile(fetchHttp, id, await cookieOf(id));
 		avatars.forget(id);
 		log.info('profile', `${accounts.get(id)!.accountName}: Steam profile set up`);
 	});

@@ -31,6 +31,9 @@ export function extractAvatarUrl(xml: string): string | undefined {
 	}
 }
 
+/** Steam's profile XML for an account that never set up its Community profile. */
+export const isProfileUnset = (xml: string): boolean => /has not yet set up their Steam Community profile|could not be found/i.test(xml);
+
 /** The profile name ("nickname") from the same public profile XML, cleaned for display. */
 export function extractPersonaName(xml: string): string | undefined {
 	const m = /<steamID>\s*(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?\s*<\/steamID>/.exec(xml);
@@ -46,7 +49,8 @@ const decodeHtml = (t: string): string => t.replace(/&#(\d+);/g, (_, n: string) 
  * Name and picture are read from that page instead.
  */
 export function extractFromPage(html: string): { name?: string; url?: string } {
-	const n = /<span class="actual_persona_name">([\s\S]*?)<\/span>/.exec(html)?.[1] ?? /<title>\s*Steam Community\s*::\s*([\s\S]*?)<\/title>/.exec(html)?.[1];
+	// An account without a profile sees "Hello, name." and a title "Welcome name!" instead of a profile.
+	const n = /<span class="actual_persona_name">([\s\S]*?)<\/span>/.exec(html)?.[1] ?? /<div id="hello">\s*Hello,\s*([\s\S]*?)\.\s*<\/div>/.exec(html)?.[1] ?? /<title>\s*Steam Community\s*::\s*Welcome\s+([\s\S]*?)!\s*<\/title>/.exec(html)?.[1] ?? /<title>\s*Steam Community\s*::\s*([\s\S]*?)<\/title>/.exec(html)?.[1];
 	// eslint-disable-next-line no-control-regex
 	const name = n ? decodeHtml(n).replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 64) : '';
 	const img = /<link rel="image_src" href="(https:\/\/[^"]+)"/.exec(html)?.[1];
@@ -345,9 +349,10 @@ export class AvatarCache {
 			}
 			if (name) next.name = name;
 			next.probed = true;
-			if (/<steamID64>/.test(xml)) delete next.unset;
-			else if (xml.trim().length > 0) next.unset = true;
-			if (!/<steamID64>/.test(xml)) log.info('avatar', `${steamId}: no profile data from Steam (${xml.length} bytes: "${xml.replace(/\s+/g, ' ').slice(0, 90)}")`);
+			// Steam's XML for an account without a profile has an empty name and says so in the privacy message.
+			if (isProfileUnset(xml)) next.unset = true;
+			else if (/<steamID64>/.test(xml)) delete next.unset;
+			if (!/<steamID64>/.test(xml) || next.unset) log.info('avatar', `${steamId}: no profile data from Steam (${xml.length} bytes: "${xml.replace(/\s+/g, ' ').slice(0, 90)}")`);
 			const bans = this.apiMode ? undefined : extractBans(xml);
 			if (bans) next.bans = bans;
 			let changed = name !== before?.name || JSON.stringify(bans) !== JSON.stringify(before?.bans);

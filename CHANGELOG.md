@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.12
+- Steam profile setup, built from what Steam really sends: for an account without a profile Steam's public data has an empty name and says "This user has not yet set up their Steam Community profile". That is now what marks an account as "without Steam profile". Before, the app waited for a different message and never saw it.
+- The name of such an account is read from Steam's "Hello, name." welcome page (signed in as the account).
+- "Set up Steam profile" opens the profile editor (the page behind Steam's green button). If Steam then still shows no profile, the editor form is saved once with the name the account already has, and Steam is asked again. If it still does not work, the message says so and what to do.
+
 ## 0.9.11
 - Trades, several accounts: an account with nothing to send now shows "nothing to send" instead of "waiting".
 - Profile setup: when Steam gives no profile data for an account, the log now says what it answered (first 90 characters), so the detection can be checked against what Steam really sends.

@@ -90,7 +90,7 @@ describe('bans', () => {
 });
 
 
-import { extractFromPage } from '../src/main/avatar';
+import { extractFromPage, isProfileUnset } from '../src/main/avatar';
 describe('profile page of an account that was never set up', () => {
 	it('reads the name and picture', () => {
 		const html = '<title>Steam Community :: figment &amp; co</title><link rel="image_src" href="https://avatars.steamstatic.com/abc123.jpg"><span class="actual_persona_name">figment &amp; co</span>';
@@ -121,5 +121,14 @@ describe('account without a Steam profile', () => {
 		expect(new AvatarCache(dir).isUnset(ID)).toBe(true);
 		cache.forget(ID);
 		expect(cache.isUnset(ID)).toBe(false);
+	});
+});
+
+describe('profile of an account that was never set up', () => {
+	it('is recognised from the XML (empty name) and the name is read from the signed-in welcome page', async () => {
+		const unsetXml = '<profile><steamID64>1</steamID64><steamID><![CDATA[  ]]></steamID><privacyMessage>This user has not yet set up their Steam Community profile.</privacyMessage></profile>';
+		expect(isProfileUnset(unsetXml)).toBe(true);
+		expect(isProfileUnset('<profile><steamID64>1</steamID64><steamID>x</steamID></profile>')).toBe(false);
+		expect(extractFromPage('<title>Steam Community :: Welcome naulsbodenbw!</title><div id="hello">Hello, naulsbodenbw.</div>').name).toBe('naulsbodenbw');
 	});
 });

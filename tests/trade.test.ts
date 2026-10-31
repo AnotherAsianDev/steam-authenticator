@@ -121,17 +121,27 @@ describe('parseOpenOffers', () => {
 });
 
 describe('setupProfile', () => {
-	it('opens the profile editor, following the move to the profile address', async () => {
+	const ID = '76561198626397763';
+	const editor = '<input name="personaName" value="naul">';
+	const unset = '<profile><privacyMessage>This user has not yet set up their Steam Community profile.</privacyMessage></profile>';
+	it('is done once the editor was opened and Steam then shows a profile', async () => {
 		const seen: string[] = [];
-		const http: Http = async (req) => {
-			seen.push(req.url);
-			return req.url.includes('/my/') ? { status: 302, text: '', location: '/profiles/76561199000000001/edit?welcomed=1' } : { status: 200, text: '<input name="personaName" value="x">' };
-		};
-		await setupProfile(http, 'steamLoginSecure=a');
-		expect(seen[1]).toBe('https://steamcommunity.com/profiles/76561199000000001/edit?welcomed=1');
+		await setupProfile(async (req) => { seen.push(`${req.method} ${req.url}`); return req.url.includes('xml=1') ? { status: 200, text: '<profile><steamID>naul</steamID></profile>' } : { status: 200, text: editor }; }, ID, 'c');
+		expect(seen).toEqual([`GET https://steamcommunity.com/profiles/${ID}/edit?welcomed=1`, `GET https://steamcommunity.com/profiles/${ID}/?xml=1`]);
 	});
-	it('says so when Steam shows something else', async () => {
-		await expect(setupProfile(async () => ({ status: 200, text: '<html>Sign in</html>' }), 'c')).rejects.toThrow(/profile editor/);
-		await expect(setupProfile(async () => ({ status: 302, text: '', location: 'https://steamcommunity.com/login/home' }), 'c')).rejects.toThrow(/HTTP 302/);
+	it('saves the editor form when Steam still shows no profile, and then checks again', async () => {
+		let saved = false;
+		let body = '';
+		await setupProfile(async (req) => {
+			if (req.method === 'POST') { saved = true; body = req.body ?? ''; return { status: 200, text: '{"success":1}' }; }
+			return req.url.includes('xml=1') ? { status: 200, text: saved ? '<profile><steamID>naul</steamID></profile>' : unset } : { status: 200, text: editor };
+		}, ID, 'c');
+		expect(body).toContain('type=profileSave');
+		expect(body).toContain('personaName=naul');
+	});
+	it('says so when it did not work', async () => {
+		await expect(setupProfile(async (req) => (req.url.includes('xml=1') ? { status: 200, text: unset } : { status: 200, text: editor }), ID, 'c')).rejects.toThrow(/still shows/);
+		await expect(setupProfile(async () => ({ status: 200, text: '<html>Sign in</html>' }), ID, 'c')).rejects.toThrow(/profile editor/);
+		await expect(setupProfile(async () => ({ status: 302, text: '', location: 'https://steamcommunity.com/login/home' }), ID, 'c')).rejects.toThrow(/HTTP 302/);
 	});
 });

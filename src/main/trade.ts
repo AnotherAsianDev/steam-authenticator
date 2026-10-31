@@ -203,21 +203,32 @@ export async function fetchInventory(http: Http, steamId: string, game: Game, co
 }
 
 /**
- * Sets up the Steam Community profile of an account: the page behind the "Set Up Steam Profile" button.
- * Steam creates the profile when the account opens it, so this is one signed-in page load.
+ * Sets up the Steam Community profile of an account: the page behind the "Set Up Steam Profile" button is the profile editor.
+ * Opening it may be enough for Steam; if the public profile still says "not set up" afterwards, the editor's form is saved once with the name the account already has.
  */
-export async function setupProfile(http: Http, cookie: string): Promise<void> {
-	const headers = { 'User-Agent': BROWSER, Cookie: `${cookie}; sessionid=${randomBytes(12).toString('hex')}` };
-	let url = 'https://steamcommunity.com/my/edit?welcomed=1';
-	let res = await http({ method: 'GET', url, headers });
+export async function setupProfile(http: Http, steamId: string, cookie: string): Promise<void> {
+	const sessionId = randomBytes(12).toString('hex');
+	const headers = { 'User-Agent': BROWSER, Cookie: `${cookie}; sessionid=${sessionId}` };
+	const edit = `https://steamcommunity.com/profiles/${steamId}/edit?welcomed=1`;
+	let res = await http({ method: 'GET', url: edit, headers });
 	for (let hop = 0; hop < 3 && res.status >= 300 && res.status < 400 && res.location; hop++) {
-		const next = new URL(res.location, url);
+		const next = new URL(res.location, edit);
 		if (next.protocol !== 'https:' || next.hostname !== 'steamcommunity.com' || /\/login/i.test(next.pathname)) break;
-		url = next.toString();
-		res = await http({ method: 'GET', url, headers });
+		res = await http({ method: 'GET', url: next.toString(), headers });
 	}
-	checkStatus(res.status, 'setting up the profile');
-	if (!/name="personaName"|profile_edit|edit_profile/i.test(res.text)) throw new UserError('Steam did not open the profile editor, so the profile may not be set up. Sign in again and retry');
+	checkStatus(res.status, 'opening the profile editor');
+	if (!/name="personaName"|profile_edit|edit_profile/i.test(res.text)) throw new UserError('Steam did not open the profile editor. Sign in again on the account page and retry');
+	const stillUnset = async (): Promise<boolean> => {
+		const xml = await http({ method: 'GET', url: `https://steamcommunity.com/profiles/${steamId}/?xml=1`, headers: { 'User-Agent': BROWSER } });
+		return /has not yet set up their Steam Community profile/i.test(xml.text);
+	};
+	if (!(await stillUnset())) return;
+	// Save the form as Steam shows it: the name stays as it is, everything else stays empty.
+	const name = /name="personaName"[^>]*value="([^"]*)"/.exec(res.text)?.[1] ?? /value="([^"]*)"[^>]*name="personaName"/.exec(res.text)?.[1] ?? '';
+	const form = new URLSearchParams({ sessionID: sessionId, type: 'profileSave', personaName: name.replace(/&amp;/g, '&').replace(/&quot;/g, '"'), real_name: '', summary: 'No information given.', country: '', state: '', city: '', customURL: '', json: '1', hide_profile_awards: '0' });
+	const saved = await http({ method: 'POST', url: `https://steamcommunity.com/profiles/${steamId}/edit/`, headers: { ...headers, 'Content-Type': 'application/x-www-form-urlencoded', Origin: 'https://steamcommunity.com', Referer: edit }, body: form.toString() });
+	checkStatus(saved.status, 'saving the profile');
+	if (await stillUnset()) throw new UserError('Steam still shows this account without a profile. Open the account on Steam (Account page, Open on Steam, Profile) and click Set Up Steam Profile there');
 }
 
 export function chunk<T>(list: readonly T[], size = OFFER_SIZE): T[][] {
