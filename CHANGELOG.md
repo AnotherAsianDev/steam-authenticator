@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.9.7
+- Lower CPU use: the ring around the codes is redrawn 12 times a second instead of 60 (it still looks smooth), and each code box repaints on its own.
+
 ## 0.9.6
 - More modern controls with the same colors: quiet outlined buttons with a soft hover, one filled main action with a gentle glow, dropdowns with a chevron, a clear accent glow on the field you are in, a raised pill for the active tab, softer card edges with a faint top highlight, Cascadia Mono for the codes, a visible keyboard focus ring.
 - Nickname for accounts without a set-up Steam profile, third try: the app asks for the profile page as the account itself (with its saved sign-in), then the public page, then Steam's hover card. An account with a picture but no name is asked again at most once an hour. If no name is found, the log says what the page contained.

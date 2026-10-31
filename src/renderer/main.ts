@@ -355,8 +355,10 @@ function ring(li: HTMLElement, remaining: number): void {
 	rings.get(li)?.cancel();
 	const from = `${(remaining / 30) * 360}deg`;
 	li.style.setProperty('--p', from);
-	rings.set(li, li.animate({ '--p': [from, '0deg'] }, { duration: remaining * 1000, easing: 'linear', fill: 'forwards' }));
+	rings.set(li, li.animate({ '--p': [from, '0deg'] }, { duration: remaining * 1000, easing: `steps(${Math.max(1, Math.round(remaining * RING_FPS))}, end)`, fill: 'forwards' }));
 }
+/** The ring is redrawn this often. A custom property cannot run on the graphics card, so every frame is a repaint of every row: 12 a second looks smooth on a ring this small and costs a fifth of 60. */
+const RING_FPS = 12;
 const rings = new WeakMap<HTMLElement, Animation>();
 
 /** Runs a screen's refresh on a timer, but not while the window is hidden or minimized. */
