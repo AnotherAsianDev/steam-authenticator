@@ -214,7 +214,8 @@ function handle<T>(channel: string, fn: (...args: any[]) => T | Promise<T>): voi
 	ipcMain.handle(channel, async (event, ...args) => {
 		// Only our own window may call in.
 		if (event.senderFrame?.url !== win?.webContents.getURL()) throw new Error('Untrusted sender');
-		const what = AUDIT[channel]?.(args);
+		let what: string | undefined;
+		try { what = AUDIT[channel]?.(args); } catch { /* a log line must never break an action */ }
 		try {
 			const value = await fn(...args);
 			if (what && channel !== 'tradeSend' && channel !== 'profileSetup') log.info('action', what);
