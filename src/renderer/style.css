@@ -718,3 +718,8 @@ select { appearance: none; padding-right: 30px; background-image: url("data:imag
 .nav .count, .shell.collapsed .nav .count { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 11px; transition: right .22s, top .22s, transform .22s; }
 .shell.collapsed .nav .count { right: 4px; top: 5px; transform: none; font-size: 10px; }
 .shell.collapsed .nav .label + .count { margin: 0; }
+
+.ov-chip.amber { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); cursor: pointer; }
+.ov-chip.amber:hover { background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.dlg-list { list-style: none; margin: 0; padding: 8px 12px; max-height: 160px; overflow-y: auto; border-radius: var(--radius); background: var(--raised); display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.dlg-list li { color: var(--warn); }

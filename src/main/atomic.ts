@@ -1,4 +1,4 @@
-import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, renameSync, writeSync } from 'node:fs';
+import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 /**
@@ -23,7 +23,32 @@ export function writeFileAtomic(file: string, data: string | Buffer, opts: { mod
 			/* a failed backup must not stop the save */
 		}
 	}
-	renameSync(tmp, file);
+	replace(tmp, file, data, opts.mode);
+}
+
+const sleep = (ms: number): void => void Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/**
+ * Moves the finished temporary file over the real one. A folder that a sync program (Proton Drive, OneDrive, an antivirus) is watching can refuse the
+ * rename for a moment (EPERM, EBUSY, EACCES), so it is tried again a few times. If it is still refused, the content is written straight into the file.
+ */
+function replace(tmp: string, file: string, data: string | Buffer, mode?: number): void {
+	const busy = (err: unknown): boolean => ['EPERM', 'EBUSY', 'EACCES'].includes((err as { code?: string } | null)?.code ?? '');
+	for (const wait of [0, 25, 60, 120, 250, 500, 1000]) {
+		sleep(wait);
+		try {
+			renameSync(tmp, file);
+			return;
+		} catch (err) {
+			if (!busy(err)) throw err;
+		}
+	}
+	writeFileSync(file, data, { mode: mode ?? 0o600 });
+	try {
+		unlinkSync(tmp);
+	} catch {
+		/* the leftover temporary file is harmless */
+	}
 }
 
 /** What to tell the person when a file could not be written. */

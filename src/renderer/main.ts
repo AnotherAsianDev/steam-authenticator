@@ -166,6 +166,7 @@ declare const api: {
 	progress(): P<{ running: boolean; done: number; total: number }>;
 	openSteam(id: string, target: string, link?: string): P<void>;
 	profileSetup(id: string): P<void>;
+	profilesRefresh(id?: string): P<void>;
 	version(): P<string>;
 	updateInfo(force?: boolean): P<{ version: string; url: string } | null>;
 	updateOpen(): P<void>;
@@ -717,7 +718,7 @@ interface DialogField {
 	numeric?: boolean;
 }
 /** A small form in a window of its own. `run` returns an error to show, or nothing to close. */
-function dialog(title: string, text: string, fields: DialogField[], submit: string, run: (v: Record<string, string>) => Promise<string | undefined>): void {
+function dialog(title: string, text: string, fields: DialogField[], submit: string, run: (v: Record<string, string>) => Promise<string | undefined>, list: string[] = []): void {
 	document.querySelector('.modal')?.remove();
 	const inputs = fields.map((f) => el('input', { type: 'password', autocomplete: 'off', spellcheck: false, placeholder: f.label, ariaLabel: f.label, ...(f.numeric ? { inputMode: 'numeric' as const } : {}) }));
 	const err = el('p', { class: 'hint error', textContent: '' });
@@ -726,7 +727,7 @@ function dialog(title: string, text: string, fields: DialogField[], submit: stri
 		overlay.remove();
 		document.removeEventListener('keydown', onKey);
 	};
-	const form = el('form', { class: 'signin' }, el('h1', { textContent: title }), el('p', { class: 'hint', textContent: text }), ...inputs, err, el('div', { class: 'row-actions' }, el('button', { class: 'small', type: 'button', textContent: 'Cancel', onclick: close }), btn));
+	const form = el('form', { class: 'signin' }, el('h1', { textContent: title }), el('p', { class: 'hint', textContent: text }), ...(list.length ? [el('ul', { class: 'dlg-list' }, ...list.map((n) => el('li', { textContent: n })))] : []), ...inputs, err, el('div', { class: 'row-actions' }, el('button', { class: 'small', type: 'button', textContent: 'Cancel', onclick: close }), btn));
 	const overlay = el('div', { class: 'modal' }, el('div', { class: 'lock-card left' }, form));
 	const onKey = (e: KeyboardEvent): void => {
 		if (e.key === 'Escape') close();
@@ -803,7 +804,7 @@ async function listScreen(): Promise<void> {
 		'header',
 		{},
 		el('h1', { class: 'title', textContent: 'Accounts' }),
-		el('div', { class: 'actions' }, iconButton('Check confirmations now', '↻', () => void api.refreshAll()), )
+		el('div', { class: 'actions' }, iconButton('Read all Steam profiles again (names, pictures, bans)', '↻', () => { void api.profilesRefresh().then(() => { toast('Reading the Steam profiles again. This takes a moment'); void refreshView(); }); }))
 	);
 	const strip = progressStrip();
 	const search = el('input', { type: 'text', class: 'search', placeholder: 'Filter accounts', value: query, ariaLabel: 'Filter accounts', spellcheck: false });
@@ -896,6 +897,7 @@ async function listScreen(): Promise<void> {
 			{ label: 'Send items…', run: () => void navigate({ name: 'trades', id }) },
 			{ label: 'Details, note and tags…', run: () => void navigate({ name: 'detail', id }) },
 			{ label: row.pending ? `Confirmations (${row.pending})…` : 'Confirmations…', run: () => void navigate({ name: 'confirms' }) },
+			{ label: 'Read Steam profile again', run: async () => { await api.profilesRefresh(id); toast('Reading the Steam profile again'); await refresh(); } },
 			{ label: 'Set up Steam profile', run: async () => { const r = await api.profileSetup(id); toast(r.ok ? 'Steam profile set up. Steam takes a minute or two to show it' : r.error, !r.ok); await refresh(); } },
 			{ label: 'Check confirmations now', run: async () => { const r = await api.refresh(id); toast(r.ok ? 'Checked' : r.error, !r.ok); await refresh(); } },
 			'sep',
@@ -941,7 +943,7 @@ async function listScreen(): Promise<void> {
 		const count = (k: TodoItem['kind']): number => todo.filter((t) => t.kind === k).length;
 		const defs: [TodoItem['kind'], string][] = [['signin', 'need sign-in'], ['expiring', 'sign-in running out'], ['password', 'without password'], ['revocation', 'without revocation code'], ['activation', 'not activated']];
 		const unset = lastRows.filter((r) => r.noProfile);
-		const setupChip = unset.length ? [el('button', { class: 'ov-chip warn', type: 'button', title: 'Opens Steam\'s profile editor for each of these accounts, like the "Set Up Steam Profile" button', textContent: `${unset.length} without Steam profile`, onclick: (e: Event) => {
+		const setupChip = unset.length ? [el('button', { class: 'ov-chip amber', type: 'button', title: 'Opens Steam\'s profile editor for each of these accounts, like the "Set Up Steam Profile" button', textContent: `${unset.length} without Steam profile`, onclick: (e: Event) => {
 			const b = e.currentTarget as HTMLButtonElement;
 			dialog('Set up Steam profiles', `Set up the Steam profile of ${unset.length} account${unset.length === 1 ? '' : 's'}? For each one the app opens Steam's profile editor and saves it once with the name the account already has. It takes about ${Math.ceil(unset.length * 2.5)} seconds, and Steam needs a minute or two afterwards to show the profiles.`, [], `Set up ${unset.length} profile${unset.length === 1 ? '' : 's'}`, async () => {
 				void (async () => {
@@ -958,7 +960,7 @@ async function listScreen(): Promise<void> {
 					void refreshView();
 				})();
 				return undefined;
-			});
+			}, unset.map((r) => accountLabel(r.name, r.nickname)));
 		} })] : [];
 		const chips = defs.filter(([k]) => count(k) > 0).map(([k, text]) => el('button', { class: 'ov-chip warn', type: 'button', title: 'Open the To do list', textContent: `${count(k)} ${text}`, onclick: () => void navigate({ name: 'todo' }) }));
 		overview.replaceChildren(
@@ -1949,17 +1951,19 @@ async function detailScreen(id: string): Promise<void> {
 					d.value.bans.length ? el('div', { class: 'chips' }, ...d.value.bans.map((b) => el('span', { class: 'ban-tag', textContent: b }))) : el('p', { class: 'hint', textContent: 'No bans at the moment.' }),
 					el('p', { class: 'hint', textContent: `${d.value.banNote ? d.value.banNote + ' ' : ''}As of the last check. Turn this off under Settings, Watch for bans.` }),
 					...(d.value.banHistory.length ? [el('ul', { class: 'ban-history' }, ...[...d.value.banHistory].reverse().map((e) => el('li', {}, el('span', { class: 'hint', textContent: new Date(e.at).toLocaleDateString() }), el('span', { textContent: e.what }))))] : []))] : []),
-				...(d.value.noProfile ? [el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Steam profile' }),
-					el('p', { class: 'hint', textContent: 'This account has no Steam Community profile yet. Steam needs one for trading and for the nickname and picture to show. This does the same as the "Set Up Steam Profile" button on the Steam website.' }),
-					el('div', { class: 'row-actions left' }, el('button', { class: 'small primary', type: 'button', textContent: 'Set up Steam profile', onclick: async (e: Event) => {
-						const b = e.currentTarget as HTMLButtonElement;
-						b.disabled = true;
-						const r = await api.profileSetup(id);
-						b.disabled = false;
-						if (!r.ok) return toast(r.error, true);
-						toast('Steam profile set up. Steam takes a minute or two to show it');
-						void navigate({ name: 'detail', id });
-					} })))] : []),
+				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Steam profile' }),
+					el('p', { class: d.value.noProfile ? 'hint warn' : 'hint', textContent: d.value.noProfile ? 'This account has no Steam Community profile yet. Steam needs one for trading and for the nickname and picture to show. "Set up" does the same as the "Set Up Steam Profile" button on the Steam website.' : 'Name, picture and bans come from the public Steam profile. Read it again after a change on Steam.' }),
+					el('div', { class: 'row-actions left' },
+						el('button', { class: 'small', type: 'button', textContent: 'Read profile again', onclick: async () => { await api.profilesRefresh(id); toast('Reading the Steam profile again. This takes a moment'); } }),
+						...(d.value.noProfile ? [el('button', { class: 'small primary', type: 'button', textContent: 'Set up Steam profile', onclick: async (e: Event) => {
+							const b = e.currentTarget as HTMLButtonElement;
+							b.disabled = true;
+							const r = await api.profileSetup(id);
+							b.disabled = false;
+							if (!r.ok) return toast(r.error, true);
+							toast('Steam profile set up. Steam takes a minute or two to show it');
+							void navigate({ name: 'detail', id });
+						} })] : []))),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Note and tags' }), noteRow),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Copy' }), chips, pwBlock),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Open on Steam, signed in' }), webBar, el('p', { class: 'hint', textContent: 'Opens a separate window that is already logged in as this account. Nothing is kept when you close it.' })),

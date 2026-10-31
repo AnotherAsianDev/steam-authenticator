@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.16
+- Read the Steam profiles again: the round-arrow button at the top of the Accounts page now reads all profiles again (names, pictures, bans). Before, it was "check confirmations now", which the app does by itself and which has its own button on the Confirmations page. For one account: "Read profile again" on its account page, and "Read Steam profile again" in its right-click menu.
+- The confirmation window for "N without Steam profile" lists the accounts that will be set up, and the mark is amber like the icon on the rows.
+- Saving a settings file no longer fails with "EPERM: operation not permitted, rename" when a sync program such as Proton Drive holds the file for a moment: the replace is tried again a few times, and if the file is still refused the content is written straight into it. This covers every file the app saves, not only the settings.
+
 ## 0.9.15
 - Nickname of an account without a Steam profile: after the public profile page, the app also reads the "Hello, name." greeting of the page the account itself sees when signed in (the one with the "Set Up Steam Profile" button). Only that greeting is used, never a page title.
 

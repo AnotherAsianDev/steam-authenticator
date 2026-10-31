@@ -485,6 +485,10 @@ function registerIpc(): void {
 		if (typeof target !== 'string' || !(target in TARGETS)) throw new UserError('Unknown page');
 		openSteamWindow(id, accounts.get(id)!.accountName, await token(), target, { links });
 	});
+	handle('profilesRefresh', (steamId?: unknown) => {
+		if (steamId === undefined || steamId === null) avatars.refreshAll();
+		else avatars.forget(known(steamId));
+	});
 	handle('profileSetup', async (steamId: unknown) => {
 		const id = known(steamId);
 		await setupProfile(fetchHttp, id, await cookieOf(id));
