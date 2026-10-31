@@ -259,6 +259,7 @@ const ICONS: Record<string, string> = {
 	community: '<path d="M4 5h16v11H9l-5 4z"/><path d="m9.5 8.5 5 4m0-4-5 4"/>',
 	trade: '<path d="M4 8h14l-3-3M20 16H6l3 3"/><path d="m4 4 16 16"/>',
 	probation: '<path d="M6 3h12M6 21h12M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9"/>',
+	noprofile: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" stroke-dasharray="2.5 2.5"/>',
 	note: '<path d="M5 4h14v12l-5 5H5z"/><path d="M14 21v-5h5M8 9h8M8 13h4"/>',
 	ban: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>',
 	clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
@@ -762,7 +763,7 @@ function banIcon(label: string): string {
 /** The small marks after an account's name: bans, waiting confirmations, sign-in problems, tags. Rebuilt only when something changed, so tooltips do not flicker. */
 function drawFlags(li: HTMLElement, row: Row): void {
 	const box = li.querySelector<HTMLElement>('.flags')!;
-	const key = JSON.stringify([row.state, row.pending, row.bans, row.sessionDays, row.tags, row.note]);
+	const key = JSON.stringify([row.state, row.pending, row.bans, row.sessionDays, row.tags, row.note, row.noProfile]);
 	if (box.dataset['key'] === key) return;
 	box.dataset['key'] = key;
 	const flag = (cls: string, content: string, title: string, go: () => void): HTMLElement => {
@@ -780,6 +781,7 @@ function drawFlags(li: HTMLElement, row: Row): void {
 	else if (row.pending) status.push(flag('hot', String(row.pending), `${row.pending} confirmation${row.pending === 1 ? '' : 's'} waiting. Click to review`, () => void navigate({ name: 'confirms' })));
 	li.querySelector<HTMLElement>('.status')!.replaceChildren(...status);
 	nodes.push(row.sessionDays !== null ? flag('warn', svgIcon('clock'), `The saved sign-in runs out in ${row.sessionDays} day${row.sessionDays === 1 ? '' : 's'}. Save the password to keep it going`, detail) : gap());
+	nodes.push(row.noProfile ? flag('warn', svgIcon('noprofile'), 'This account has no Steam profile yet. Click to set it up', detail) : gap());
 	nodes.push(row.note ? flag('note', svgIcon('note'), row.note, detail) : gap());
 	for (const label of row.bans) nodes.push(flag('ban', svgIcon(banIcon(label)), `Steam shows: ${label}`, detail));
 	if (row.tags[0]) nodes.push(el('span', { class: 'tag', textContent: row.tags[0] }));
@@ -939,25 +941,24 @@ async function listScreen(): Promise<void> {
 		const count = (k: TodoItem['kind']): number => todo.filter((t) => t.kind === k).length;
 		const defs: [TodoItem['kind'], string][] = [['signin', 'need sign-in'], ['expiring', 'sign-in running out'], ['password', 'without password'], ['revocation', 'without revocation code'], ['activation', 'not activated']];
 		const unset = lastRows.filter((r) => r.noProfile);
-		const setupChip = unset.length ? [el('button', { class: 'ov-chip warn', type: 'button', title: 'Opens the profile editor page on Steam for each of these accounts, like the "Set Up Steam Profile" button', textContent: `${unset.length} without Steam profile`, onclick: async (e: Event) => {
+		const setupChip = unset.length ? [el('button', { class: 'ov-chip warn', type: 'button', title: 'Opens Steam\'s profile editor for each of these accounts, like the "Set Up Steam Profile" button', textContent: `${unset.length} without Steam profile`, onclick: (e: Event) => {
 			const b = e.currentTarget as HTMLButtonElement;
-			if (!b.dataset['sure']) {
-				b.dataset['sure'] = '1';
-				b.textContent = `Click again to set up ${unset.length}`;
-				window.setTimeout(() => { delete b.dataset['sure']; b.textContent = `${unset.length} without Steam profile`; }, 4000);
-				return;
-			}
-			b.disabled = true;
-			let done = 0;
-			let failed = '';
-			for (const [n, r] of unset.entries()) {
-				b.textContent = `Setting up ${n + 1} of ${unset.length}…`;
-				const res = await api.profileSetup(r.steamId);
-				if (res.ok) done++; else failed ||= `${r.name}: ${res.error}`;
-				if (n < unset.length - 1) await sleep(1500);
-			}
-			toast(failed ? `${done} set up, then: ${failed}` : `${done} profile${done === 1 ? '' : 's'} set up`, !!failed);
-			void refreshView();
+			dialog('Set up Steam profiles', `Set up the Steam profile of ${unset.length} account${unset.length === 1 ? '' : 's'}? For each one the app opens Steam's profile editor and saves it once with the name the account already has. It takes about ${Math.ceil(unset.length * 2.5)} seconds, and Steam needs a minute or two afterwards to show the profiles.`, [], `Set up ${unset.length} profile${unset.length === 1 ? '' : 's'}`, async () => {
+				void (async () => {
+					b.disabled = true;
+					let done = 0;
+					let failed = '';
+					for (const [n, r] of unset.entries()) {
+						b.textContent = `Setting up ${n + 1} of ${unset.length}…`;
+						const res = await api.profileSetup(r.steamId);
+						if (res.ok) done++; else failed ||= `${r.name}: ${res.error}`;
+						if (n < unset.length - 1) await sleep(1500);
+					}
+					toast(failed ? `${done} set up, then: ${failed}` : `${done} profile${done === 1 ? '' : 's'} set up. Steam takes a minute or two to show them`, !!failed);
+					void refreshView();
+				})();
+				return undefined;
+			});
 		} })] : [];
 		const chips = defs.filter(([k]) => count(k) > 0).map(([k, text]) => el('button', { class: 'ov-chip warn', type: 'button', title: 'Open the To do list', textContent: `${count(k)} ${text}`, onclick: () => void navigate({ name: 'todo' }) }));
 		overview.replaceChildren(

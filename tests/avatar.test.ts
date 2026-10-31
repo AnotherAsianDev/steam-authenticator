@@ -90,7 +90,7 @@ describe('bans', () => {
 });
 
 
-import { isProfileUnset } from '../src/main/avatar';
+import { extractPageName, isProfileUnset } from '../src/main/avatar';
 describe('profile of an account that was never set up', () => {
 	it('is recognised from Steam\'s XML: empty name and the privacy message', () => {
 		const unsetXml = '<profile><steamID64>1</steamID64><steamID><![CDATA[  ]]></steamID><privacyMessage>This user has not yet set up their Steam Community profile.</privacyMessage></profile>';
@@ -108,5 +108,13 @@ describe('profile of an account that was never set up', () => {
 		expect(new AvatarCache(dir).isUnset(ID)).toBe(true);
 		cache.forget(ID);
 		expect(cache.isUnset(ID)).toBe(false);
+	});
+});
+
+describe('name from the profile page', () => {
+	it('reads the name element only, without invisible characters', () => {
+		expect(extractPageName('<title>Steam Community :: chotaingop</title><span class="actual_persona_name">chota&amp;ingop\u{e0021}</span>')).toBe('chota&ingop');
+		expect(extractPageName('<title>Steam Community :: Welcome x!</title><div id="hello">Hello, x.</div>')).toBeUndefined();
+		expect(extractPageName('<span class="actual_persona_name">\u200b </span>')).toBeUndefined();
 	});
 });

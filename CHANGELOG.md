@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.14
+- Accounts without a Steam profile now have a mark on their row (a dashed person icon, in its own fixed place after the sign-in clock). Click it to open the account, where "Set up Steam profile" is.
+- Nickname of an account without a profile whose name was changed anyway: Steam's profile data leaves the name empty, so the app now reads the name element of the profile page (public first, then as the account itself). Page titles and welcome texts are not used, so no "Welcome x!" names. Invisible characters are removed from names.
+- "N without Steam profile" now opens a confirmation window ("Set up the Steam profile of 25 accounts?" with the button "Set up 25 profiles") and shows the progress on the mark while it runs.
+
 ## 0.9.13
 - Removed the lookups that took a nickname from Steam's web pages (the profile page title, the welcome page and the hover card). They were the reason accounts showed names like "Welcome figment!". The nickname now only comes from Steam's profile data, so an account without a profile shows its login name. Names that were saved like that are dropped and read again.
 - An account without a Steam profile is recognised from Steam's profile data (empty name and the "has not yet set up their Steam Community profile" message). Such an account gets Steam's default picture.

@@ -31,6 +31,19 @@ export function extractAvatarUrl(xml: string): string | undefined {
 	}
 }
 
+/**
+ * The name on a profile page. An account without a profile has an empty name in Steam's XML even when its name was changed; the page still shows it.
+ * Only the name element of the profile itself is used, never a page title.
+ */
+export function extractPageName(html: string): string | undefined {
+	const raw = /<span class="actual_persona_name">([\s\S]*?)<\/span>/.exec(html)?.[1];
+	if (!raw) return undefined;
+	const text = raw.replace(/<[^>]*>/g, '').replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n))).replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+	// eslint-disable-next-line no-control-regex
+	const name = text.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2060\ufeff\u{e0000}-\u{e007f}]/gu, '').trim().slice(0, 64);
+	return name || undefined;
+}
+
 /** Steam's profile XML for an account that never set up its Community profile. */
 export const isProfileUnset = (xml: string): boolean => /has not yet set up their Steam Community profile|could not be found/i.test(xml);
 
@@ -114,7 +127,9 @@ export class AvatarCache {
 		private readonly dir: string,
 		private readonly onUpdate: () => void = () => undefined,
 		private readonly profileBase = 'https://steamcommunity.com/profiles',
-		private readonly onNewBan: (steamId: string, what: string) => void = () => undefined
+		private readonly onNewBan: (steamId: string, what: string) => void = () => undefined,
+		/** The profile page as the account itself sees it, for when the public one has no name. */
+		private readonly signedPage: (steamId: string) => Promise<string | undefined> = async () => undefined
 	) {
 		this.load();
 	}
@@ -287,7 +302,19 @@ export class AvatarCache {
 			const xml = await fetch(`${this.profileBase}/${steamId}/?xml=1`, { signal: AbortSignal.timeout(10_000) }).then((r) => r.text());
 			const before = this.profiles[steamId];
 			const next: Profile = { ...(before ?? { checked: 0 }), checked: Date.now() };
-			const name = extractPersonaName(xml);
+			let name = extractPersonaName(xml);
+			if (!name && isProfileUnset(xml)) {
+				// No name in the XML, but the profile page may still show the one the account chose.
+				for (const read of [async () => fetch(`${this.profileBase}/${steamId}`, { signal: AbortSignal.timeout(10_000) }).then((r) => r.text()), () => this.signedPage(steamId)]) {
+					try {
+						const html = await read();
+						name = html ? extractPageName(html) : undefined;
+					} catch {
+						name = undefined;
+					}
+					if (name) break;
+				}
+			}
 			if (name) next.name = name;
 			next.probed = true;
 			// Steam's XML for an account without a profile has an empty name and says so in the privacy message.
