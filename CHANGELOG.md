@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.19
+
+- The small messages at the bottom stay longer (4.5 s, errors 6 s, longer texts up to 12 s) and show a thin line underneath that runs out, so you can see when they disappear. Hovering a message pauses it.
+- The log now records what you do, not only what goes wrong: sign-ins, passwords, PIN and vault changes, adding, importing, removing and restoring accounts, backups and exports, trade links, trade sends and cancels, profile setup, confirmations and settings changes, and also when one of them fails and why. Secrets are still redacted.
+- Removed leftover menu code.
+
 ## 0.9.18
 - Right-click menu: the saved trade links open to the right of their entry, like a Windows submenu, instead of unfolding underneath it. (On the right edge of the window they open to the left.)
 - Right-click menu: it was measured while its pop-in animation still scaled it, so it could end up a few rows too low and be cut off at the bottom; it is now measured at full size and always fits.

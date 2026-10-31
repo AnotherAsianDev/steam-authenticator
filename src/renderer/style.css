@@ -235,7 +235,7 @@ input[type='password'], input[type='text'], textarea.lines {
 .toast {
 	position: fixed; bottom: 46px; left: 50%; transform: translateX(-50%);
 	background: var(--text); color: var(--bg); padding: 7px 14px;
-	border-radius: 999px; font-size: 12px; max-width: 92%; text-align: center;
+	border-radius: 999px; font-size: 12px; max-width: 92%; text-align: center; overflow: hidden; padding-bottom: 10px;
 }
 .toast.error { background: var(--danger); color: #fff; }
 
@@ -727,7 +727,11 @@ select { appearance: none; padding-right: 30px; background-image: url("data:imag
 .brand, .shell.collapsed .brand { padding: 10px 0 22px 5px; gap: 12px; }
 
 .ctx { overflow-y: auto; overscroll-behavior: contain; }
-.ctx-item.nested { padding-left: 32px; }
 .ctx-item[hidden] { display: none; }
 
 .ctx-fly { z-index: 51; min-width: 160px; }
+
+/* the time left on a notice: a thin line along its bottom edge that runs out */
+.toast-bar { position: absolute; left: 14px; right: 14px; bottom: 4px; height: 2px; border-radius: 2px; background: currentColor; opacity: .45; transform-origin: left; animation: toastbar var(--toast-ms, 4500ms) linear forwards; }
+.toast.held .toast-bar { animation-play-state: paused; }
+@keyframes toastbar { to { transform: scaleX(0); } }

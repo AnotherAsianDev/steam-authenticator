@@ -386,12 +386,24 @@ function show(...nodes: Node[]): void {
 }
 
 let toastTimer: number | undefined;
+/** A short notice at the bottom. A thin line under the text runs out as the time does; pointing at it pauses both. */
 function toast(message: string, error = false): void {
 	document.querySelector('.toast')?.remove();
-	const t = el('div', { class: error ? 'toast error' : 'toast', textContent: message, role: 'status' });
+	// Longer messages and errors stay longer.
+	const total = Math.min(12_000, Math.max(error ? 6000 : 4500, message.length * 70));
+	const t = el('div', { class: error ? 'toast error' : 'toast', role: 'status' }, el('span', { textContent: message }), el('i', { class: 'toast-bar' }));
+	t.style.setProperty('--toast-ms', `${total}ms`);
 	document.body.append(t);
-	window.clearTimeout(toastTimer);
-	toastTimer = window.setTimeout(() => { t.classList.add('leaving'); window.setTimeout(() => t.remove(), 200); }, 2800);
+	let left = total;
+	let since = Date.now();
+	const arm = (): void => {
+		since = Date.now();
+		window.clearTimeout(toastTimer);
+		toastTimer = window.setTimeout(() => { t.classList.add('leaving'); window.setTimeout(() => t.remove(), 200); }, left);
+	};
+	t.addEventListener('mouseenter', () => { left -= Date.now() - since; window.clearTimeout(toastTimer); t.classList.add('held'); });
+	t.addEventListener('mouseleave', () => { t.classList.remove('held'); arm(); });
+	arm();
 }
 
 /** A small notice when a newer release exists. Nothing is downloaded; the button opens the release page. */
@@ -563,8 +575,8 @@ function showMenu(x: number, y: number, items: MenuItem[]): void {
 			menu.append(el('div', { class: 'ctx-head', textContent: it.head }));
 			continue;
 		}
-		const leaf = (l: Leaf, nested = false): HTMLButtonElement => {
-			const b = el('button', { class: `ctx-item${l.danger ? ' danger' : ''}${nested ? ' nested' : ''}`, type: 'button', role: 'menuitem', disabled: !!l.disabled });
+		const leaf = (l: Leaf): HTMLButtonElement => {
+			const b = el('button', { class: `ctx-item${l.danger ? ' danger' : ''}`, type: 'button', role: 'menuitem', disabled: !!l.disabled });
 			b.append(el('span', { textContent: l.label }));
 			if (l.hint) b.append(el('small', { class: 'ctx-hint', textContent: l.hint }));
 			let armed = false;

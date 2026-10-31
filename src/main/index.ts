@@ -169,15 +169,60 @@ function afterUnlock(): void {
 	startupCheck();
 }
 
+/** What each action that changes something is called in the log. Reading and refreshing are not listed: they would drown the rest. */
+const who = (id: unknown): string => (typeof id === 'string' ? accounts.get(id)?.accountName : undefined) ?? 'an account';
+const AUDIT: Record<string, (a: any[]) => string> = {
+	act: (a) => `${who(a[0])}: ${a[1] === 'accept' ? 'accepted' : 'declined'} ${Array.isArray(a[2]) ? a[2].length : 0} confirmation(s)`,
+	signIn: (a) => `${who(a[0])}: sign-in`,
+	setPassword: (a) => `${who(a[0])}: password saved`,
+	clearPassword: (a) => `${who(a[0])}: password removed`,
+	setRevocation: (a) => `${who(a[0])}: revocation code saved`,
+	remove: (a) => `${who(a[0])}: moved to the trash`,
+	trashRestore: () => 'Restored from the trash',
+	trashDelete: () => 'Deleted from the trash',
+	trashEmpty: () => 'Trash emptied',
+	import: () => 'Import from files',
+	importLines: () => 'Import from text',
+	importOne: () => 'Import of one account from text',
+	addFolder: () => 'Watched folder added',
+	backupSave: () => 'Encrypted backup saved',
+	backupRestore: () => 'Encrypted backup restored',
+	exportSave: () => 'Export saved',
+	exportCopy: () => 'Export copied to the clipboard',
+	apiKeySet: () => 'Web API key saved',
+	apiKeyRemove: () => 'Web API key removed',
+	vaultSetUp: () => 'Master password set',
+	vaultChange: () => 'Master password changed',
+	vaultRemove: () => 'Master password removed',
+	vaultLock: () => 'Lock',
+	vaultUnlock: () => 'Unlock',
+	pinSet: () => 'Quick unlock PIN set',
+	pinRemove: () => 'Quick unlock PIN removed',
+	enrollBegin: () => 'New authenticator: started',
+	enrollAdd: () => 'New authenticator: added to the account',
+	enrollActivate: () => 'New authenticator: activated',
+	enrollCancel: () => 'New authenticator: cancelled',
+	tradeLinkSave: () => 'Trade link saved',
+	tradeLinkRemove: () => 'Trade link removed',
+	tradeSend: (a) => `${who(a[0])}: sending items`,
+	tradeCancel: (a) => `${who(a[0])}: cancelling an offer`,
+	profileSetup: (a) => `${who(a[0])}: setting up the Steam profile`,
+	openSteam: (a) => `${who(a[0])}: opened ${String(a[1])} on Steam (signed in)`,
+	setSettings: (a) => `Settings changed: ${a[0] && typeof a[0] === 'object' ? Object.keys(a[0]).join(', ') : ''}`
+};
 function handle<T>(channel: string, fn: (...args: any[]) => T | Promise<T>): void {
 	ipcMain.handle(channel, async (event, ...args) => {
 		// Only our own window may call in.
 		if (event.senderFrame?.url !== win?.webContents.getURL()) throw new Error('Untrusted sender');
+		const what = AUDIT[channel]?.(args);
 		try {
-			return { ok: true, value: await fn(...args) };
+			const value = await fn(...args);
+			if (what && channel !== 'tradeSend' && channel !== 'profileSetup') log.info('action', what);
+			return { ok: true, value };
 		} catch (err) {
 			if (!(err instanceof UserError)) log.error('app', `Unexpected error in ${channel}`, err);
 			const message = err instanceof UserError ? err.message : describeWriteError(err) ?? 'Something went wrong';
+			if (what) log.warn('action', `Failed: ${what}: ${message}`);
 			return { ok: false, error: message };
 		}
 	});
