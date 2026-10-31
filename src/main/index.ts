@@ -11,7 +11,7 @@ import { findMaFileFolders, importFolder, normalizeStoreFolder, readMaFile } fro
 import { CredentialStore } from './credentials';
 import { FolderWatcher } from './watcher';
 import { clockOffset, steamNow, syncClock } from './clock';
-import { GAMES, accountIdOf, chunk, fetchHttp, cancelOffer, fetchInventory, fetchOpenOffers, parseTradeLink, sendOffer } from './trade';
+import { GAMES, accountIdOf, chunk, fetchHttp, cancelOffer, fetchInventory, setupProfile, fetchOpenOffers, parseTradeLink, sendOffer } from './trade';
 import { sessionCookie } from './sessions';
 import { openBackup, sealBackup, type BackupAccount } from './backup';
 import { ConfirmationsClient, fetchTransport, type Action } from './confirmations';
@@ -307,6 +307,7 @@ function registerIpc(): void {
 				code: generateCode(a.sharedSecret, t),
 				remaining: secondsRemaining(t),
 				hasAvatar: showAvatars && avatars.has(steamId),
+				noProfile: avatars.isUnset(steamId),
 				nickname: avatars.nickname(steamId) ?? null,
 				bans: watchBans ? banLabels(avatars.bans(steamId)) : [],
 				tags: meta.get(steamId).tags,
@@ -344,7 +345,7 @@ function registerIpc(): void {
 	});
 	handle('detail', (steamId: unknown) => {
 		const a = accounts.get(known(steamId))!;
-		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note, tags: meta.get(a.steamId).tags, bans: banLabels(avatars.bans(a.steamId)), banNote: banNote(avatars.bans(a.steamId)), banHistory: avatars.history(a.steamId), sessionDays: accounts.sessionDaysLeft(a.steamId) ?? null };
+		return { steamId: a.steamId, name: a.accountName, nickname: avatars.nickname(a.steamId) ?? null, hasRevocation: !!a.revocationCode, hasPassword: accounts.hasPassword(a.steamId), pinned: meta.get(a.steamId).pinned, note: meta.get(a.steamId).note, tags: meta.get(a.steamId).tags, bans: banLabels(avatars.bans(a.steamId)), banNote: banNote(avatars.bans(a.steamId)), banHistory: avatars.history(a.steamId), noProfile: avatars.isUnset(a.steamId), sessionDays: accounts.sessionDaysLeft(a.steamId) ?? null };
 	});
 	handle('apiKeyState', () => apiKeyState());
 	handle('apiKeySet', async (key: unknown) => {
@@ -472,11 +473,23 @@ function registerIpc(): void {
 	handle('refreshAll', () => {
 		void accounts.refreshAll();
 	});
-	handle('openSteam', async (steamId: unknown, target: unknown) => {
+	handle('openSteam', async (steamId: unknown, target: unknown, link?: unknown) => {
 		const id = known(steamId);
+		const links = settings.get().tradeLinks;
+		const token = async (): Promise<string> => accounts.webToken(id);
+		if (target === 'tradelink') {
+			const l = parseTradeLink(str(link, 'trade link'));
+			openSteamWindow(id, accounts.get(id)!.accountName, await token(), target, { url: `https://steamcommunity.com/tradeoffer/new/?partner=${accountIdOf(l.steamId)}&token=${l.token}`, links });
+			return;
+		}
 		if (typeof target !== 'string' || !(target in TARGETS)) throw new UserError('Unknown page');
-		const token = await accounts.webToken(id);
-		openSteamWindow(id, accounts.get(id)!.accountName, token, target);
+		openSteamWindow(id, accounts.get(id)!.accountName, await token(), target, { links });
+	});
+	handle('profileSetup', async (steamId: unknown) => {
+		const id = known(steamId);
+		await setupProfile(fetchHttp, await cookieOf(id));
+		avatars.forget(id);
+		log.info('profile', `${accounts.get(id)!.accountName}: Steam profile set up`);
 	});
 	// ---- Sending items by trade offer ----
 	const gameOf = (key: unknown) => {

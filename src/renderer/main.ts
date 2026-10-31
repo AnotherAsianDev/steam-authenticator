@@ -7,6 +7,7 @@ interface Row {
 	code: string;
 	remaining: number;
 	hasAvatar: boolean;
+	noProfile: boolean;
 	pinned: boolean;
 	note: string;
 	tags: string[];
@@ -134,7 +135,7 @@ declare const api: {
 	avatar(id: string): P<string | null>;
 	copyCode(id: string): P<void>;
 	copyField(id: string, field: string): P<void>;
-	detail(id: string): P<{ steamId: string; name: string; nickname: string | null; hasRevocation: boolean; hasPassword: boolean; pinned: boolean; note: string; tags: string[]; bans: string[]; banNote: string; banHistory: { at: number; what: string }[]; sessionDays: number | null }>;
+	detail(id: string): P<{ steamId: string; name: string; nickname: string | null; hasRevocation: boolean; hasPassword: boolean; pinned: boolean; note: string; tags: string[]; bans: string[]; banNote: string; banHistory: { at: number; what: string }[]; sessionDays: number | null; noProfile: boolean }>;
 	setMeta(id: string, patch: { pinned?: boolean; note?: string; tags?: string[] | string; skipBulk?: boolean }): P<{ pinned: boolean; note: string; tags: string[]; skipBulk: boolean }>;
 	apiKeyState(): P<{ has: boolean; locked: boolean; hint: string }>;
 	apiKeySet(key: string): P<{ has: boolean; locked: boolean; hint: string }>;
@@ -163,7 +164,8 @@ declare const api: {
 	openProfile(id: string): P<void>;
 	refreshAll(): P<void>;
 	progress(): P<{ running: boolean; done: number; total: number }>;
-	openSteam(id: string, target: string): P<void>;
+	openSteam(id: string, target: string, link?: string): P<void>;
+	profileSetup(id: string): P<void>;
 	version(): P<string>;
 	updateInfo(force?: boolean): P<{ version: string; url: string } | null>;
 	updateOpen(): P<void>;
@@ -933,10 +935,31 @@ async function listScreen(): Promise<void> {
 		const banned = lastRows.filter((r) => r.bans.length).length;
 		const count = (k: TodoItem['kind']): number => todo.filter((t) => t.kind === k).length;
 		const defs: [TodoItem['kind'], string][] = [['signin', 'need sign-in'], ['expiring', 'sign-in running out'], ['password', 'without password'], ['revocation', 'without revocation code'], ['activation', 'not activated']];
+		const unset = lastRows.filter((r) => r.noProfile);
+		const setupChip = unset.length ? [el('button', { class: 'ov-chip warn', type: 'button', title: 'Opens the profile editor page on Steam for each of these accounts, like the "Set Up Steam Profile" button', textContent: `${unset.length} without Steam profile`, onclick: async (e: Event) => {
+			const b = e.currentTarget as HTMLButtonElement;
+			if (!b.dataset['sure']) {
+				b.dataset['sure'] = '1';
+				b.textContent = `Click again to set up ${unset.length}`;
+				window.setTimeout(() => { delete b.dataset['sure']; b.textContent = `${unset.length} without Steam profile`; }, 4000);
+				return;
+			}
+			b.disabled = true;
+			let done = 0;
+			let failed = '';
+			for (const [n, r] of unset.entries()) {
+				b.textContent = `Setting up ${n + 1} of ${unset.length}…`;
+				const res = await api.profileSetup(r.steamId);
+				if (res.ok) done++; else failed ||= `${r.name}: ${res.error}`;
+				if (n < unset.length - 1) await sleep(1500);
+			}
+			toast(failed ? `${done} set up, then: ${failed}` : `${done} profile${done === 1 ? '' : 's'} set up`, !!failed);
+			void refreshView();
+		} })] : [];
 		const chips = defs.filter(([k]) => count(k) > 0).map(([k, text]) => el('button', { class: 'ov-chip warn', type: 'button', title: 'Open the To do list', textContent: `${count(k)} ${text}`, onclick: () => void navigate({ name: 'todo' }) }));
 		overview.replaceChildren(
 			el('div', { class: 'ov-total' }, el('strong', { textContent: String(total) }), el('span', { textContent: total === 1 ? 'account' : 'accounts' })),
-			el('div', { class: 'ov-chips' }, ...(banned ? [el('span', { class: 'ov-chip warn', textContent: `${banned} banned`, title: lastRows.filter((r) => r.bans.length).map((r) => `${r.name}: ${r.bans.join(', ')}`).join('\n') })] : []), ...(chips.length ? chips : [el('span', { class: 'ov-chip good', textContent: 'Everything is complete' })]))
+			el('div', { class: 'ov-chips' }, ...setupChip, ...(banned ? [el('span', { class: 'ov-chip warn', textContent: `${banned} banned`, title: lastRows.filter((r) => r.bans.length).map((r) => `${r.name}: ${r.bans.join(', ')}`).join('\n') })] : []), ...(chips.length ? chips : [el('span', { class: 'ov-chip good', textContent: 'Everything is complete' })]))
 		);
 	}
 	const keyBanner = el('div', { class: 'key-banner', role: 'status', hidden: true });
@@ -1922,6 +1945,17 @@ async function detailScreen(id: string): Promise<void> {
 					d.value.bans.length ? el('div', { class: 'chips' }, ...d.value.bans.map((b) => el('span', { class: 'ban-tag', textContent: b }))) : el('p', { class: 'hint', textContent: 'No bans at the moment.' }),
 					el('p', { class: 'hint', textContent: `${d.value.banNote ? d.value.banNote + ' ' : ''}As of the last check. Turn this off under Settings, Watch for bans.` }),
 					...(d.value.banHistory.length ? [el('ul', { class: 'ban-history' }, ...[...d.value.banHistory].reverse().map((e) => el('li', {}, el('span', { class: 'hint', textContent: new Date(e.at).toLocaleDateString() }), el('span', { textContent: e.what }))))] : []))] : []),
+				...(d.value.noProfile ? [el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Steam profile' }),
+					el('p', { class: 'hint', textContent: 'This account has no Steam Community profile yet. Steam needs one for trading and for the nickname and picture to show. This does the same as the "Set Up Steam Profile" button on the Steam website.' }),
+					el('div', { class: 'row-actions left' }, el('button', { class: 'small primary', type: 'button', textContent: 'Set up Steam profile', onclick: async (e: Event) => {
+						const b = e.currentTarget as HTMLButtonElement;
+						b.disabled = true;
+						const r = await api.profileSetup(id);
+						b.disabled = false;
+						if (!r.ok) return toast(r.error, true);
+						toast('Steam profile set up');
+						void navigate({ name: 'detail', id });
+					} })))] : []),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Note and tags' }), noteRow),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Copy' }), chips, pwBlock),
 				el('section', { class: 'group' }, el('h2', { class: 'todo-title', textContent: 'Open on Steam, signed in' }), webBar, el('p', { class: 'hint', textContent: 'Opens a separate window that is already logged in as this account. Nothing is kept when you close it.' })),
@@ -2356,7 +2390,13 @@ async function tradesScreen(wanted?: string): Promise<void> {
 		savedLinks = r.value;
 		drawTargets();
 	} });
-	const showLinkBoxes = (): void => { linkBox.hidden = targetSel.value !== 'paste'; removeBtn.hidden = !targetSel.value.startsWith('l:'); };
+	const openBtn = el('button', { class: 'small', type: 'button', textContent: 'Open signed in', title: 'Opens this trade link in a Steam window signed in as the sending account', onclick: async () => {
+		const link = targetSel.value.startsWith('l:') ? targetSel.value.slice(2) : linkInput.value.trim();
+		const r = await api.openSteam(id, 'tradelink', link);
+		if (!r.ok) toast(r.error, true);
+	} });
+	const showLinkBoxes = (): void => {
+		openBtn.hidden = !(targetSel.value.startsWith('l:') || (targetSel.value === 'paste' && linkInput.value.trim())); linkBox.hidden = targetSel.value !== 'paste'; removeBtn.hidden = !targetSel.value.startsWith('l:'); };
 	function drawTargets(select = ''): void {
 		const group = (label: string, opts: HTMLOptionElement[]): HTMLElement[] => {
 			if (!opts.length) return [];
@@ -2450,7 +2490,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 		sendBtn.disabled = busy || n === 0 || !targetParam();
 		confirmBox.hidden = true;
 	}
-	linkInput.addEventListener('input', drawSummary);
+	linkInput.addEventListener('input', () => { showLinkBoxes(); drawSummary(); });
 
 	async function load(): Promise<void> {
 		busy = true;
@@ -2526,7 +2566,7 @@ async function tradesScreen(wanted?: string): Promise<void> {
 			lockedBox,
 			el('section', { class: 'send-panel' },
 				el('div', { class: 'send-panel-head' }, count),
-				field('Send to', el('div', { class: 'target-row' }, targetSel, removeBtn)),
+				field('Send to', el('div', { class: 'target-row' }, targetSel, removeBtn, openBtn)),
 				linkBox,
 				el('div', { class: 'send-panel-foot' }, sendBtn)),
 			confirmBox,

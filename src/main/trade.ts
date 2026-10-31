@@ -202,6 +202,24 @@ export async function fetchInventory(http: Http, steamId: string, game: Game, co
 	return { ...parseInventory(pages), cut };
 }
 
+/**
+ * Sets up the Steam Community profile of an account: the page behind the "Set Up Steam Profile" button.
+ * Steam creates the profile when the account opens it, so this is one signed-in page load.
+ */
+export async function setupProfile(http: Http, cookie: string): Promise<void> {
+	const headers = { 'User-Agent': BROWSER, Cookie: `${cookie}; sessionid=${randomBytes(12).toString('hex')}` };
+	let url = 'https://steamcommunity.com/my/edit?welcomed=1';
+	let res = await http({ method: 'GET', url, headers });
+	for (let hop = 0; hop < 3 && res.status >= 300 && res.status < 400 && res.location; hop++) {
+		const next = new URL(res.location, url);
+		if (next.protocol !== 'https:' || next.hostname !== 'steamcommunity.com' || /\/login/i.test(next.pathname)) break;
+		url = next.toString();
+		res = await http({ method: 'GET', url, headers });
+	}
+	checkStatus(res.status, 'setting up the profile');
+	if (!/name="personaName"|profile_edit|edit_profile/i.test(res.text)) throw new UserError('Steam did not open the profile editor, so the profile may not be set up. Sign in again and retry');
+}
+
 export function chunk<T>(list: readonly T[], size = OFFER_SIZE): T[][] {
 	const out: T[][] = [];
 	for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));

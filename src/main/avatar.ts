@@ -112,6 +112,8 @@ interface Profile {
 	/** When the profile page was last read. */
 	checked: number;
 	bans?: Bans;
+	/** Steam has no Community profile for this account yet (it was never set up). */
+	unset?: boolean;
 	/** What changed about the bans and when, newest last. */
 	events?: { at: number; what: string }[];
 }
@@ -149,6 +151,7 @@ export class AvatarCache {
 					...(typeof p.name === 'string' ? { name: p.name } : {}),
 					...(typeof p.url === 'string' ? { url: p.url } : {}),
 					checked: typeof p.checked === 'number' ? p.checked : 0,
+					...(p.unset === true ? { unset: true } : {}),
 					...(Array.isArray(p.events) ? { events: p.events.filter((e) => typeof e?.at === 'number' && typeof e?.what === 'string').slice(-EVENTS_MAX) } : {}),
 					...(b && typeof b.vac === 'boolean' && typeof b.trade === 'string' ? { bans: { vac: b.vac, trade: b.trade, limited: b.limited === true, ...(typeof b.vacCount === 'number' ? { vacCount: b.vacCount } : {}), ...(typeof b.gameBans === 'number' ? { gameBans: b.gameBans } : {}), ...(typeof b.community === 'boolean' ? { community: b.community } : {}), ...(typeof b.daysSince === 'number' ? { daysSince: b.daysSince } : {}), ...(b.api ? { api: true as const } : {}) } } : {})
 				};
@@ -189,6 +192,22 @@ export class AvatarCache {
 		for (const p of Object.values(this.profiles)) p.checked = 0;
 		this.failed.clear();
 		this.checkedAt.clear();
+	}
+
+	/** True when Steam says this account has no Community profile yet. */
+	isUnset(steamId: string): boolean {
+		return this.profiles[steamId]?.unset === true;
+	}
+
+	/** Read this profile again as soon as it is asked for (for example after it was set up). */
+	forget(steamId: string): void {
+		const p = this.profiles[steamId];
+		if (p) {
+			p.checked = 0;
+			delete p.unset;
+		}
+		this.failed.delete(steamId);
+		this.checkedAt.delete(steamId);
 	}
 
 	/** The profile name, once it has been fetched. */
@@ -320,6 +339,8 @@ export class AvatarCache {
 				if (!name) this.failed.set(steamId, Date.now());
 			}
 			if (name) next.name = name;
+			if (/<steamID64>/.test(xml)) delete next.unset;
+			else if (/could not be found/i.test(xml)) next.unset = true;
 			const bans = this.apiMode ? undefined : extractBans(xml);
 			if (bans) next.bans = bans;
 			let changed = name !== before?.name || JSON.stringify(bans) !== JSON.stringify(before?.bans);

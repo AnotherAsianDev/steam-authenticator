@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GAMES, accountIdOf, chunk, fetchInventory, parseInventory, parseOpenOffers, parseTradeLink, unlockTime, sendOffer, type Http, type Item } from '../src/main/trade';
+import { GAMES, accountIdOf, chunk, setupProfile, fetchInventory, parseInventory, parseOpenOffers, parseTradeLink, unlockTime, sendOffer, type Http, type Item } from '../src/main/trade';
 
 const LINK = 'https://steamcommunity.com/tradeoffer/new/?partner=1039734271&token=AbCd_-12';
 const item = (n: number): Item => ({ assetId: String(n), group: 'g', name: 'Case', type: 'Container', icon: 'x', color: '', amount: 1 });
@@ -117,5 +117,21 @@ describe('parseOpenOffers', () => {
 	it('copes with nothing', () => {
 		expect(parseOpenOffers({ response: {} })).toEqual([]);
 		expect(parseOpenOffers(null)).toEqual([]);
+	});
+});
+
+describe('setupProfile', () => {
+	it('opens the profile editor, following the move to the profile address', async () => {
+		const seen: string[] = [];
+		const http: Http = async (req) => {
+			seen.push(req.url);
+			return req.url.includes('/my/') ? { status: 302, text: '', location: '/profiles/76561199000000001/edit?welcomed=1' } : { status: 200, text: '<input name="personaName" value="x">' };
+		};
+		await setupProfile(http, 'steamLoginSecure=a');
+		expect(seen[1]).toBe('https://steamcommunity.com/profiles/76561199000000001/edit?welcomed=1');
+	});
+	it('says so when Steam shows something else', async () => {
+		await expect(setupProfile(async () => ({ status: 200, text: '<html>Sign in</html>' }), 'c')).rejects.toThrow(/profile editor/);
+		await expect(setupProfile(async () => ({ status: 302, text: '', location: 'https://steamcommunity.com/login/home' }), 'c')).rejects.toThrow(/HTTP 302/);
 	});
 });

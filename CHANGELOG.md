@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.9
+- Set up the Steam profile from the app: an account that never opened its Steam Community profile (Steam's "Hello, ... Set Up Steam Profile" page) gets a "Set up Steam profile" button on its account page, and the Accounts page shows a "N without Steam profile" mark that sets up all of them (click twice to confirm, 1.5 seconds between accounts). It opens the same page as Steam's own button. Needed for trading and for the nickname and picture to appear.
+- Trades: "Open signed in" next to a saved or pasted trade link opens it in a Steam window signed in as the sending account.
+- The signed-in Steam window has a "Saved trade links" menu that opens any saved link.
+
 ## 0.9.8
 - The side menu opens and closes in one smooth movement: the icons stay exactly where they are, only the width changes and the labels fade in and out. Before, labels appeared at once and some entries jumped sideways while the menu was still moving. The count badges glide to their place too.
 

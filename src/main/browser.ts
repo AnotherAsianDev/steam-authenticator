@@ -27,8 +27,8 @@ export const isSteamUrl = (raw: string): boolean => {
 
 const open = new Map<string, BrowserWindow>();
 
-export function openSteamWindow(steamId: string, name: string, accessToken: string, target: string): void {
-	const template = TARGETS[target];
+export function openSteamWindow(steamId: string, name: string, accessToken: string, target: string, extra: { url?: string; links?: { name: string; link: string }[] } = {}): void {
+	const template = extra.url ?? TARGETS[target];
 	if (!template) throw new Error('Unknown page');
 	const url = template.replace('{id}', steamId);
 
@@ -64,6 +64,7 @@ export function openSteamWindow(steamId: string, name: string, accessToken: stri
 			{ label: 'Profile', click: () => void win.loadURL(TARGETS['profile']!.replace('{id}', steamId)) },
 			{ label: 'Inventory', click: () => void win.loadURL(TARGETS['inventory']!.replace('{id}', steamId)) },
 			{ label: 'Trade offers', click: () => void win.loadURL(TARGETS['tradeoffers']!.replace('{id}', steamId)) },
+			...(extra.links?.length ? [{ label: 'Saved trade links', submenu: extra.links.map((l) => ({ label: l.name, click: () => void win.loadURL(l.link) })) }] : []),
 			{ label: 'Market', click: () => void win.loadURL(TARGETS['market']!) },
 			{ label: 'Store', click: () => void win.loadURL(TARGETS['store']!) },
 			{ label: 'Open page in default browser', click: () => void shell.openExternal(win.webContents.getURL()) }
