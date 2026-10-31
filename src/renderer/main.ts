@@ -548,6 +548,12 @@ let closeMenu: () => void = () => undefined;
 function showMenu(x: number, y: number, items: MenuItem[]): void {
 	closeMenu();
 	const menu = el('div', { class: 'ctx', role: 'menu' });
+	let flyout: HTMLElement | undefined;
+	const closeFlyout = (): void => {
+		flyout?.remove();
+		flyout = undefined;
+		menu.querySelectorAll('[aria-expanded=true]').forEach((n) => n.setAttribute('aria-expanded', 'false'));
+	};
 	for (const it of items) {
 		if (it === 'sep') {
 			menu.append(el('div', { class: 'ctx-sep', role: 'separator' }));
@@ -574,33 +580,41 @@ function showMenu(x: number, y: number, items: MenuItem[]): void {
 			return b;
 		};
 		if ('items' in it) {
-			// A group that opens in place, so a long list does not make the menu taller than the window.
-			const inner = it.items.map((l) => leaf(l, true));
-			for (const n of inner) n.hidden = true;
-			const toggle = el('button', { class: 'ctx-item', type: 'button', role: 'menuitem', ariaExpanded: 'false' });
+			// A group that opens to the side, like a Windows submenu. It is a second small menu next to the entry.
+			const toggle = el('button', { class: 'ctx-item', type: 'button', role: 'menuitem', ariaHasPopup: 'menu', ariaExpanded: 'false' });
 			toggle.append(el('span', { textContent: it.label }), el('small', { class: 'ctx-hint', textContent: '›' }));
-			toggle.addEventListener('click', () => {
-				const open = toggle.ariaExpanded !== 'true';
-				toggle.ariaExpanded = String(open);
-				toggle.querySelector('small')!.textContent = open ? '⌄' : '›';
-				for (const n of inner) n.hidden = !open;
-				fit();
-			});
-			menu.append(toggle, ...inner);
+			const group = it.items;
+			const open = (): void => {
+				closeFlyout();
+				toggle.ariaExpanded = 'true';
+				const fly = el('div', { class: 'ctx ctx-fly', role: 'menu' }, ...group.map((l) => leaf(l)));
+				document.body.append(fly);
+				const t = toggle.getBoundingClientRect();
+				const room = window.innerWidth - t.right - 4;
+				fly.style.left = `${room >= fly.offsetWidth ? t.right - 2 : Math.max(4, t.left - fly.offsetWidth + 2)}px`;
+				fly.style.top = `${Math.max(4, Math.min(t.top - 5, window.innerHeight - fly.offsetHeight - 4))}px`;
+				fly.style.maxHeight = `${window.innerHeight - 8}px`;
+				flyout = fly;
+			};
+			toggle.addEventListener('click', () => { open(); flyout?.querySelector<HTMLElement>('.ctx-item')?.focus(); });
+			toggle.addEventListener('mouseenter', open);
+			menu.append(toggle);
 			continue;
 		}
-		menu.append(leaf(it));
+		const plain = leaf(it);
+		plain.addEventListener('mouseenter', closeFlyout);
+		menu.append(plain);
 	}
 	document.body.append(menu);
 	/** Keeps the whole menu inside the window: moved up or left when needed, and scrollable when it is taller than the window. */
 	function fit(): void {
 		menu.style.maxHeight = `${window.innerHeight - 8}px`;
-		const r = menu.getBoundingClientRect();
-		menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
-		menu.style.top = `${Math.max(4, Math.min(y, window.innerHeight - r.height - 4))}px`;
+		// offsetWidth/Height, because the pop-in animation scales the box while it is measured.
+		menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - menu.offsetWidth - 4))}px`;
+		menu.style.top = `${Math.max(4, Math.min(y, window.innerHeight - menu.offsetHeight - 4))}px`;
 	}
 	fit();
-	const away = (e: Event): void => { if (!menu.contains(e.target as Node)) closeMenu(); };
+	const away = (e: Event): void => { if (!menu.contains(e.target as Node) && !flyout?.contains(e.target as Node)) closeMenu(); };
 	const key = (e: KeyboardEvent): void => {
 		if (e.key === 'Escape') return closeMenu();
 		if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -610,6 +624,7 @@ function showMenu(x: number, y: number, items: MenuItem[]): void {
 		buttons[(at + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
 	};
 	closeMenu = () => {
+		closeFlyout();
 		menu.remove();
 		document.removeEventListener('mousedown', away, true);
 		document.removeEventListener('keydown', key, true);
@@ -814,6 +829,10 @@ function drawFlags(li: HTMLElement, row: Row): void {
 	box.replaceChildren(...nodes);
 }
 
+/** Progress of "set up all Steam profiles", kept outside the screen because the overview is redrawn every second. */
+let profileRun: { n: number; total: number } | null = null;
+const setupText = (): string => (profileRun ? `Setting up ${profileRun.n} of ${profileRun.total}…` : '');
+
 async function listScreen(): Promise<void> {
 	const list = el('ul', { class: 'list' });
 	const empty = el(
@@ -963,26 +982,29 @@ async function listScreen(): Promise<void> {
 	const filterBar = el('div', { class: 'filterbar' }, search, el('div', { class: 'filter-line' }, chipRow, viewBtn, tagSelect, sortSelect));
 	const overview = el('section', { class: 'overview', hidden: true });
 	/** Account count and what is still missing, from the same list as the To do tab (ignored items are not counted). */
+	let lastTodo: TodoItem[] | undefined;
 	function drawOverview(total: number, todo: TodoItem[] | undefined): void {
+		lastTodo = todo;
 		overview.hidden = total === 0 || !todo;
 		if (!todo) return;
 		const banned = lastRows.filter((r) => r.bans.length).length;
 		const count = (k: TodoItem['kind']): number => todo.filter((t) => t.kind === k).length;
 		const defs: [TodoItem['kind'], string][] = [['signin', 'need sign-in'], ['expiring', 'sign-in running out'], ['password', 'without password'], ['revocation', 'without revocation code'], ['activation', 'not activated']];
 		const unset = lastRows.filter((r) => r.noProfile);
-		const setupChip = unset.length ? [el('button', { class: 'ov-chip amber', type: 'button', title: 'Opens Steam\'s profile editor for each of these accounts, like the "Set Up Steam Profile" button', textContent: `${unset.length} without Steam profile`, onclick: (e: Event) => {
-			const b = e.currentTarget as HTMLButtonElement;
+		const setupChip = unset.length ? [el('button', { class: 'ov-chip amber ov-setup', type: 'button', disabled: profileRun !== null, title: 'Opens Steam\'s profile editor for each of these accounts, like the "Set Up Steam Profile" button', textContent: profileRun ? setupText() : `${unset.length} without Steam profile`, onclick: () => {
 			dialog('Set up Steam profiles', `Set up the Steam profile of ${unset.length} account${unset.length === 1 ? '' : 's'}? For each one the app opens Steam's profile editor and saves it once with the name the account already has. It takes about ${Math.ceil(unset.length * 2.5)} seconds, and Steam needs a minute or two afterwards to show the profiles.`, [], `Set up ${unset.length} profile${unset.length === 1 ? '' : 's'}`, async () => {
 				void (async () => {
-					b.disabled = true;
+					const total = unset.length;
 					let done = 0;
 					let failed = '';
 					for (const [n, r] of unset.entries()) {
-						b.textContent = `Setting up ${n + 1} of ${unset.length}…`;
+						profileRun = { n: n + 1, total };
+						drawOverview(lastRows.length, lastTodo);
 						const res = await api.profileSetup(r.steamId);
 						if (res.ok) done++; else failed ||= `${r.name}: ${res.error}`;
 						if (n < unset.length - 1) await sleep(1500);
 					}
+					profileRun = null;
 					toast(failed ? `${done} set up, then: ${failed}` : `${done} profile${done === 1 ? '' : 's'} set up. Steam takes a minute or two to show them`, !!failed);
 					void refreshView();
 				})();
